@@ -5,10 +5,10 @@
 --   * fund_prices  -> fiyat uydurulmaz; ilk TEFAS senkronizasyonu veya
 --                     admin'in manuel girişiyle oluşur.
 --
--- BKY (döviz katılım fonu) için verification_needed=true işaretlenmiştir:
--- TEFAS platformundaki tüm fon fiyatları normalde TL cinsinden ilan edilir,
--- ancak referans veri kaynağı bu fonu USD olarak etiketlemişti. Canlı TEFAS
--- erişimiyle doğrulanana kadar currency='TRY' varsayımı kullanılmaktadır.
+-- BKY (döviz katılım fonu): referans veri kaynağı bu fonu USD olarak
+-- etiketlemişti, ancak 2026-09-05'te canlı TEFAS API'sinden doğrudan
+-- doğrulandı — fiyat gerçekten TL cinsinden ilan ediliyor (ör. 50.25 TL),
+-- TEFAS platformunun genel kuralıyla tutarlı. currency='TRY' teyit edilmiştir.
 
 insert into public.risk_profiles (id, key, name, description, sort_order, is_active) values
   ('00000000-0000-0000-0001-000000000001', 'dusuk_1', 'Düşük 1',
@@ -37,10 +37,7 @@ values
    'Ziraat Portföy', 'GOLD', 'BYF', 'TRY', 'ZGD', true, false, null),
   ('00000000-0000-0000-0002-000000000004', 'BKY',
    'Yapı Kredi Portföy Birinci Katılım Serbest (Döviz) Fon',
-   'Yapı Kredi Portföy', 'FX', 'Serbest', 'TRY', 'BKY', true, true,
-   'TEFAS fon fiyatları platform genelinde TL cinsinden ilan edilir; ancak ' ||
-   'bu fonun döviz temalı olması nedeniyle NAV para biriminin canlı TEFAS ' ||
-   'verisiyle doğrulanması önerilir.')
+   'Yapı Kredi Portföy', 'FX', 'Serbest', 'TRY', 'BKY', true, false, null)
 on conflict (id) do update set
   code = excluded.code, name = excluded.name, management_company = excluded.management_company,
   asset_class = excluded.asset_class, fund_type = excluded.fund_type, currency = excluded.currency,

@@ -102,13 +102,13 @@ SVG) değiştirmeniz yeterlidir; başka bir yer güncellenmesi gerekmez.
 ## Bilinen gerçek kısıtlamalar
 
 - TEFAS'ın resmi bir genel API dokümantasyonu yoktur; `tefasAdapter.ts`
-  güncel açık kaynak scraper'lardan doğrulanan endpoint/alan adlarını
-  kullanır. TEFAS yapısını değiştirirse yalnızca bu dosyanın güncellenmesi
-  gerekir.
-- BKY (döviz katılım fonu) için `currency` alanı `TRY` olarak seed edilmiştir
-  (TEFAS fiyatları platform genelinde TL cinsinden ilan edilir), ancak
-  `verification_needed=true` ile işaretlenmiştir — canlı TEFAS verisiyle
-  teyit edilmesi önerilir.
+  canlı senkronizasyonda doğrudan doğrulanan endpoint/alan adlarını kullanır.
+  TEFAS yapısını değiştirirse yalnızca bu dosyanın güncellenmesi gerekir.
+  Fon kategorisine göre değişen zorunlu `fonTipi` parametresi için bilinen
+  değerler (YAT, BYF, EMK, GYF, GSYF) sırayla denenir.
+- BKY (döviz katılım fonu) için `currency='TRY'` canlı TEFAS verisiyle teyit
+  edilmiştir (fiyatı gerçekten TL cinsinden ilan ediliyor, platformun genel
+  kuralıyla tutarlı) — `verification_needed=false`.
 - Fon getiri yüzdeleri (1 ay/3 ay/YBB/1 yıl) TEFAS'ın hazır bir alanına değil,
   sistemin kendi topladığı fiyat geçmişine dayanır; senkronizasyon yeni
   başladığında yeterli geçmiş birikene kadar "—" gösterilir.

@@ -18,7 +18,6 @@ export interface ParsedFundPrice {
 
 export interface FetchTefasOptions {
   timeoutMs?: number;
-  retries?: number;
   fetchImpl?: typeof fetch;
   now?: Date;
 }

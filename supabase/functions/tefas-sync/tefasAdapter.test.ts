@@ -1,5 +1,14 @@
-import { describe, expect, it } from "vitest";
-import { parseLatestPriceFromRows, parseTefasDate } from "./tefasAdapter.ts";
+import { describe, expect, it, vi } from "vitest";
+import { fetchLatestFundPrice, parseLatestPriceFromRows, parseTefasDate } from "./tefasAdapter.ts";
+
+function jsonResponse(status: number, body: unknown, headers: Record<string, string> = {}) {
+  return {
+    status,
+    ok: status >= 200 && status < 300,
+    headers: { get: (name: string) => headers[name.toLowerCase()] ?? null },
+    json: async () => body,
+  } as Response;
+}
 
 describe("parseTefasDate", () => {
   it("YYYY-MM-DD biçimini olduğu gibi tanır", () => {
@@ -76,5 +85,55 @@ describe("parseLatestPriceFromRows", () => {
       "ZKP",
     );
     expect(result.price).toBe(7.25);
+  });
+});
+
+describe("fetchLatestFundPrice — fonTipi döngüsü (canlı TEFAS'ta doğrulanan gerçek davranış)", () => {
+  it("ilk fonTipi (YAT) veri dönmezse hemen bir sonrakini (BYF) dener, aynısını tekrar denemez", async () => {
+    const calls: string[] = [];
+    const fetchImpl = vi.fn(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(init.body as string);
+      calls.push(body.fonTipi);
+      if (body.fonTipi === "YAT") {
+        return jsonResponse(200, { errorMessage: "Hata:java.lang.NullPointerException", resultList: null });
+      }
+      return jsonResponse(200, {
+        resultList: [{ fonKodu: "ZKP", tarih: "2026-09-04", fiyat: 267.6, kisiSayisi: 0, portfoyBuyukluk: 100 }],
+      });
+    });
+
+    const result = await fetchLatestFundPrice("ZKP", { fetchImpl: fetchImpl as unknown as typeof fetch });
+
+    expect(calls).toEqual(["YAT", "BYF"]);
+    expect(result.price).toBe(267.6);
+  });
+
+  it("429 (rate limit) durumunda aynı fonTipi ile bir kez daha dener", async () => {
+    const calls: string[] = [];
+    const fetchImpl = vi.fn(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(init.body as string);
+      calls.push(body.fonTipi);
+      if (calls.length === 1) {
+        return jsonResponse(429, {}, { "retry-after": "0" });
+      }
+      return jsonResponse(200, {
+        resultList: [{ fonKodu: "PKT", tarih: "2026-09-04", fiyat: 5, kisiSayisi: 10, portfoyBuyukluk: 100 }],
+      });
+    });
+
+    const result = await fetchLatestFundPrice("PKT", { fetchImpl: fetchImpl as unknown as typeof fetch });
+
+    expect(calls).toEqual(["YAT", "YAT"]);
+    expect(result.price).toBe(5);
+  });
+
+  it("hiçbir fonTipi veri döndürmezse anlamlı bir hata fırlatır", async () => {
+    const fetchImpl = vi.fn(async () =>
+      jsonResponse(200, { errorMessage: "Index 0 out of bounds for length 0", resultList: null }),
+    );
+
+    await expect(
+      fetchLatestFundPrice("YOKFON", { fetchImpl: fetchImpl as unknown as typeof fetch }),
+    ).rejects.toThrow(/TEFAS hatası/);
   });
 });

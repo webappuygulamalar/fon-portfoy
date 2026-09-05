@@ -100,7 +100,6 @@ Deno.serve(async (req: Request) => {
     try {
       const result = await fetchLatestFundPrice(fund.tefas_fetch_code, {
         timeoutMs: 8000,
-        retries: 2,
       });
 
       // Idempotent upsert: aynı (fund_id, price_date, currency) için tekrar
