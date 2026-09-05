@@ -1,18 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
 import { ASSET_CLASSES, ASSET_CLASS_LABELS, SHARE_BASED_ASSET_CLASSES, type AssetClass } from "../../lib/constants";
 import { validateAllocations } from "../../domain/calculation/validateAllocations";
-import { validateDepositBucketWeights } from "../../domain/calculation/depositBuckets";
 import type { FundAssetClass } from "../../domain/calculation/types";
 import { listActiveFunds } from "../../services/fundsRepository";
 import {
   createDraftFromVersion,
   getAllocationsForVersion,
-  getDepositBucketsForVersion,
   getPreferredFundsForVersion,
   listAllRiskProfiles,
   listModelVersions,
   publishModelVersion,
-  replaceDepositBuckets,
   setPreferredFund,
   upsertAllocation,
 } from "../../services/modelRepository";
@@ -23,8 +20,6 @@ import { formatDateTR } from "../../lib/format";
 
 type AllocationForm = Record<string, Partial<Record<AssetClass, number>>>; // profileId -> class -> pct
 type PreferredForm = Partial<Record<FundAssetClass, string>>; // assetClass -> fundId (varsayılan, tüm profiller)
-type BucketRow = { key: string; label: string; weightPercent: number; sortOrder: number };
-type BucketsForm = Record<string, BucketRow[]>; // profileId -> buckets
 
 export function AdminModelEditorPage() {
   const [versions, setVersions] = useState<ModelVersionRow[]>([]);
@@ -38,7 +33,6 @@ export function AdminModelEditorPage() {
 
   const [allocationForm, setAllocationForm] = useState<AllocationForm>({});
   const [preferredForm, setPreferredForm] = useState<PreferredForm>({});
-  const [bucketsForm, setBucketsForm] = useState<BucketsForm>({});
   const [effectiveDate, setEffectiveDate] = useState(() => new Date().toISOString().slice(0, 10));
 
   const drafts = versions.filter((v) => v.status === "draft");
@@ -72,10 +66,9 @@ export function AdminModelEditorPage() {
     async function loadDraft() {
       setError(null);
       try {
-        const [allocations, preferredFunds, buckets] = await Promise.all([
+        const [allocations, preferredFunds] = await Promise.all([
           getAllocationsForVersion(selectedDraftId),
           getPreferredFundsForVersion(selectedDraftId),
-          getDepositBucketsForVersion(selectedDraftId),
         ]);
 
         const allocForm: AllocationForm = {};
@@ -89,22 +82,6 @@ export function AdminModelEditorPage() {
           if (p.profile_id === null) prefForm[p.asset_class as FundAssetClass] = p.fund_id;
         }
         setPreferredForm(prefForm);
-
-        const bucketForm: BucketsForm = {};
-        for (const b of buckets) {
-          const list = bucketForm[b.profile_id] ?? [];
-          list.push({
-            key: b.id,
-            label: b.label,
-            weightPercent: Number(b.weight_percent),
-            sortOrder: b.sort_order,
-          });
-          bucketForm[b.profile_id] = list;
-        }
-        for (const key of Object.keys(bucketForm)) {
-          bucketForm[key].sort((a, b) => a.sortOrder - b.sortOrder);
-        }
-        setBucketsForm(bucketForm);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Taslak yüklenemedi");
       }
@@ -119,24 +96,15 @@ export function AdminModelEditorPage() {
         percentage: allocationForm[profile.id]?.[ac] ?? 0,
       }));
       const allocCheck = validateAllocations(allocations);
-      const bucketCheck = validateDepositBucketWeights(
-        (bucketsForm[profile.id] ?? []).map((b) => ({
-          id: b.key,
-          label: b.label,
-          weightPercent: b.weightPercent,
-          sortOrder: b.sortOrder,
-        })),
-      );
-      return { profile, allocCheck, bucketCheck };
+      return { profile, allocCheck };
     });
     const missingPreferredFunds = (SHARE_BASED_ASSET_CLASSES as FundAssetClass[]).filter(
       (ac) => !preferredForm[ac],
     );
     const allValid =
-      perProfile.every((p) => p.allocCheck.valid && p.bucketCheck.valid) &&
-      missingPreferredFunds.length === 0;
+      perProfile.every((p) => p.allocCheck.valid) && missingPreferredFunds.length === 0;
     return { perProfile, missingPreferredFunds, allValid };
-  }, [profiles, allocationForm, bucketsForm, preferredForm]);
+  }, [profiles, allocationForm, preferredForm]);
 
   async function handleCreateDraft() {
     const source = versions[0]; // en yüksek version_number (listModelVersions desc sıralı)
@@ -185,14 +153,6 @@ export function AdminModelEditorPage() {
         });
       }
 
-      for (const profile of profiles) {
-        const buckets = bucketsForm[profile.id] ?? [];
-        await replaceDepositBuckets(
-          selectedDraftId,
-          profile.id,
-          buckets.map((b, i) => ({ label: b.label, weight_percent: b.weightPercent, sort_order: i })),
-        );
-      }
       return true;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Kaydedilemedi");
@@ -314,7 +274,7 @@ export function AdminModelEditorPage() {
             <p className="disclaimer">Tüm profillerde kullanılan varsayılan fonlar.</p>
             <div className="stack-sm" style={{ marginTop: 12 }}>
               {(SHARE_BASED_ASSET_CLASSES as FundAssetClass[]).map((ac) => {
-                const options = funds.filter((f) => f.asset_class === ac);
+                const options = funds.filter((f) => f.asset_class === ac && f.is_substitution_eligible);
                 return (
                   <div className="field" key={ac}>
                     <label className="field-label">{ASSET_CLASS_LABELS[ac]}</label>
@@ -335,23 +295,6 @@ export function AdminModelEditorPage() {
                   </div>
                 );
               })}
-            </div>
-          </div>
-
-          <div className="card">
-            <p className="section-title">Mevduat Vade Dilimleri</p>
-            <p className="disclaimer">Yalnızca gösterim amaçlıdır; tanımlanırsa toplamı %100 olmalıdır.</p>
-            <div className="stack" style={{ marginTop: 12 }}>
-              {profiles.map((profile) => (
-                <DepositBucketEditor
-                  key={profile.id}
-                  profile={profile}
-                  buckets={bucketsForm[profile.id] ?? []}
-                  onChange={(buckets) =>
-                    setBucketsForm((prev) => ({ ...prev, [profile.id]: buckets }))
-                  }
-                />
-              ))}
             </div>
           </div>
 
@@ -420,72 +363,6 @@ export function AdminModelEditorPage() {
             </tbody>
           </table>
         </div>
-      </div>
-    </div>
-  );
-}
-
-function DepositBucketEditor({
-  profile,
-  buckets,
-  onChange,
-}: {
-  profile: RiskProfileRow;
-  buckets: BucketRow[];
-  onChange: (buckets: BucketRow[]) => void;
-}) {
-  const total = buckets.reduce((sum, b) => sum + b.weightPercent, 0);
-  const valid = buckets.length === 0 || Math.abs(total - 100) < 0.01;
-
-  function update(index: number, patch: Partial<BucketRow>) {
-    onChange(buckets.map((b, i) => (i === index ? { ...b, ...patch } : b)));
-  }
-
-  function remove(index: number) {
-    onChange(buckets.filter((_, i) => i !== index));
-  }
-
-  function addRow() {
-    onChange([
-      ...buckets,
-      { key: `new-${Date.now()}-${buckets.length}`, label: "", weightPercent: 0, sortOrder: buckets.length },
-    ]);
-  }
-
-  return (
-    <div className="record-card">
-      <div className="row-between">
-        <strong>{profile.name}</strong>
-        {buckets.length > 0 && (
-          <Badge variant={valid ? "mint" : "danger"}>Toplam %{total.toFixed(2)}</Badge>
-        )}
-      </div>
-      <div className="stack-sm" style={{ marginTop: 10 }}>
-        {buckets.map((b, i) => (
-          <div className="row" key={b.key}>
-            <input
-              className="input"
-              style={{ flex: 2 }}
-              placeholder="Örn. 101 gün"
-              value={b.label}
-              onChange={(e) => update(i, { label: e.target.value })}
-            />
-            <input
-              type="number"
-              className="input"
-              style={{ flex: 1 }}
-              placeholder="%"
-              value={b.weightPercent}
-              onChange={(e) => update(i, { weightPercent: Number(e.target.value) })}
-            />
-            <button className="btn btn-secondary btn-sm" onClick={() => remove(i)}>
-              Sil
-            </button>
-          </div>
-        ))}
-        <button className="btn btn-secondary btn-sm" onClick={addRow}>
-          + Vade dilimi ekle
-        </button>
       </div>
     </div>
   );

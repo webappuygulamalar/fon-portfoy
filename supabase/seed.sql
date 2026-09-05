@@ -24,25 +24,33 @@ on conflict (id) do update set
   sort_order = excluded.sort_order, is_active = excluded.is_active;
 
 insert into public.funds
-  (id, code, name, management_company, asset_class, fund_type, currency, tefas_fetch_code, is_active, verification_needed, verification_note)
+  (id, code, name, management_company, asset_class, fund_type, currency, tefas_fetch_code, is_active,
+   verification_needed, verification_note, is_participation_fund, is_substitution_eligible, catalog_category)
 values
   ('00000000-0000-0000-0002-000000000001', 'PKT',
    'Yapı Kredi Portföy Para Piyasası Katılım Serbest (TL) Fon',
-   'Yapı Kredi Portföy', 'MONEY_MARKET', 'Serbest', 'TRY', 'PKT', true, false, null),
+   'Yapı Kredi Portföy', 'MONEY_MARKET', 'Serbest', 'TRY', 'PKT', true, false, null,
+   true, true, 'Para Piyasası & Kısa Vade'),
   ('00000000-0000-0000-0002-000000000002', 'ZKP',
    'Ziraat Portföy BIST Katılım 30 Endeksi Hisse Senedi Yoğun Borsa Yatırım Fonu',
-   'Ziraat Portföy', 'BIST_EQUITY', 'BYF', 'TRY', 'ZKP', true, false, null),
+   'Ziraat Portföy', 'BIST_EQUITY', 'BYF', 'TRY', 'ZKP', true, false, null,
+   true, true, 'Hisse Senedi'),
   ('00000000-0000-0000-0002-000000000003', 'ZGD',
    'Ziraat Portföy Altın Katılım Borsa Yatırım Fonu',
-   'Ziraat Portföy', 'GOLD', 'BYF', 'TRY', 'ZGD', true, false, null),
+   'Ziraat Portföy', 'GOLD', 'BYF', 'TRY', 'ZGD', true, false, null,
+   true, true, 'Altın & Kıymetli Maden'),
   ('00000000-0000-0000-0002-000000000004', 'BKY',
    'Yapı Kredi Portföy Birinci Katılım Serbest (Döviz) Fon',
-   'Yapı Kredi Portföy', 'FX', 'Serbest', 'TRY', 'BKY', true, false, null)
+   'Yapı Kredi Portföy', 'FX', 'Serbest', 'TRY', 'BKY', true, false, null,
+   true, true, 'Döviz Katılım Serbest')
 on conflict (id) do update set
   code = excluded.code, name = excluded.name, management_company = excluded.management_company,
   asset_class = excluded.asset_class, fund_type = excluded.fund_type, currency = excluded.currency,
   tefas_fetch_code = excluded.tefas_fetch_code, is_active = excluded.is_active,
-  verification_needed = excluded.verification_needed, verification_note = excluded.verification_note;
+  verification_needed = excluded.verification_needed, verification_note = excluded.verification_note,
+  is_participation_fund = excluded.is_participation_fund,
+  is_substitution_eligible = excluded.is_substitution_eligible,
+  catalog_category = excluded.catalog_category;
 
 insert into public.model_versions (id, status, effective_date, published_at, notes) values
   ('00000000-0000-0000-0003-000000000001', 'published', current_date, now(),
@@ -83,11 +91,6 @@ insert into public.model_preferred_funds (model_version_id, profile_id, asset_cl
   ('00000000-0000-0000-0003-000000000001', null, 'FX', '00000000-0000-0000-0002-000000000004')
 on conflict do nothing;
 
--- Örnek vade dilimi kırılımı: Düşük 1'in mevduat payı (%85), 10.000.000 TL'lik
--- bir portföyde 4.000.000 TL (101 gün) + 4.500.000 TL (32 gün) şeklinde
--- bölünebilir. Yüzdeler mevduat tahsisinin payı olarak saklanır:
--- 4.000.000/8.500.000 = %47,059 ve 4.500.000/8.500.000 = %52,941.
-insert into public.model_deposit_buckets (model_version_id, profile_id, label, weight_percent, sort_order) values
-  ('00000000-0000-0000-0003-000000000001', '00000000-0000-0000-0001-000000000001', '101 gün', 47.059, 1),
-  ('00000000-0000-0000-0003-000000000001', '00000000-0000-0000-0001-000000000001', '32 gün', 52.941, 2)
-on conflict do nothing;
+-- Not: `model_deposit_buckets` tablosu geriye dönük uyumluluk için şemada
+-- kalır (bkz. 20260905120200_model_versioning_tables.sql), ancak uygulama
+-- artık mevduat vade dilimi göstermiyor/yönetmiyor; burada seed edilmez.

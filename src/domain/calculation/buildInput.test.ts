@@ -16,7 +16,6 @@ const profile: ProfileModel = {
     GOLD: "fund-zgd",
     FX: "fund-bky",
   },
-  depositBuckets: [],
 };
 
 const fundsById: Record<string, FundRow> = {
@@ -40,6 +39,10 @@ function mkFund(id: string, code: string, assetClass: FundRow["asset_class"], cu
     is_active: true,
     verification_needed: false,
     verification_note: null,
+    is_participation_fund: true,
+    catalog_category: null,
+    is_substitution_eligible: true,
+    risk_value: null,
   };
 }
 

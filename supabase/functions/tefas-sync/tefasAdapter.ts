@@ -8,7 +8,13 @@
 // fonları/BYF tipi fonlar BYF ister); yanlış değer "bulunamadı" tarzı bir
 // hataya yol açar, boş/null değer ise sunucu tarafında 500 (NullPointerException)
 // döner. Bu yüzden aşağıda birkaç bilinen fonTipi değeri sırayla denenir.
-import type { FetchTefasOptions, ParsedFundPrice, TefasRawRow } from "./types.ts";
+import type {
+  FetchTefasOptions,
+  ParsedCatalogFund,
+  ParsedFundPrice,
+  TefasBulkRow,
+  TefasRawRow,
+} from "./types.ts";
 
 const TEFAS_URL = "https://www.tefas.gov.tr/api/funds/fonGnlBlgSiraliGetir";
 
@@ -205,4 +211,243 @@ export async function fetchLatestFundPrice(
   }
 
   throw lastError instanceof Error ? lastError : new Error(String(lastError));
+}
+
+// ---------------------------------------------------------------------
+// Toplu katılım fonu keşfi — günlük katalog senkronizasyonu.
+//
+// Aynı `fonGnlBlgSiraliGetir` endpoint'i, `fonKodu: null` ve
+// `aramaMetni: "KATILIM"` ile çağrıldığında TEK bir fon yerine, başlığında
+// "katılım" geçen TÜM fonları (sayfalanmış olarak) döner — bu, canlı
+// sandbox'ta doğrudan doğrulanmıştır (2026-09-05). Bu sayede yüzlerce ayrı
+// istek yerine, her fon tipi (YAT: menkul kıymet yatırım fonu, BYF: borsa
+// yatırım fonu) için birkaç sayfalı istekle TÜM katılım fonu evreni ve
+// güncel fiyatları TEK seferde alınır.
+const BULK_FON_TIPI_CANDIDATES = ["YAT", "BYF"] as const;
+const BULK_PAGE_SIZE = 1000;
+// Hafta sonu/uzun tatil güvenliği için, tek günlük fiyat yerine son 10
+// günlük pencere istenir; her fon kodu için en güncel tarihli satır seçilir
+// (parseLatestPriceFromRows'daki mantığın tüm kodlar için genelleştirilmişi).
+const BULK_LOOKBACK_DAYS = 10;
+// TEFAS beklenmedik şekilde davranırsa (ör. toplamSayi hep artıyor gibi
+// görünürse) sonsuz döngüye girmemek için sert bir üst sınır.
+const MAX_BULK_PAGES_PER_TYPE = 20;
+
+const KNOWN_ACRONYMS = ["BIST", "TL", "USD", "EUR", "GBP", "TEFAS", "KYD", "VİOP"];
+
+/**
+ * TEFAS'ın TÜMÜ BÜYÜK HARF döndürdüğü fon unvanını, Türkçe kurallara göre
+ * (İ/I ayrımı dahil) okunabilir bir başlığa çevirir. Bilinen kısaltmalar
+ * (BIST, TL, USD...) büyük harfte kalır. Yalnızca gösterim amaçlıdır.
+ */
+export function toTitleCaseTR(raw: string): string {
+  const collapsed = raw.replace(/\s+/g, " ").trim();
+  const lower = collapsed.toLocaleLowerCase("tr-TR");
+  const titled = lower.replace(
+    /(^|[\s(/-])(\p{L})/gu,
+    (_match, sep: string, ch: string) => sep + ch.toLocaleUpperCase("tr-TR"),
+  );
+  return titled.replace(/\p{L}+/gu, (word) => {
+    const upper = word.toLocaleUpperCase("tr-TR");
+    return KNOWN_ACRONYMS.includes(upper) ? upper : word;
+  });
+}
+
+/**
+ * Türkiye'deki fon unvanları neredeyse istisnasız "<Şirket Adı> Portföy
+ * ..." biçimindedir — kurucu/portföy yönetim şirketi adı, unvanda ilk
+ * geçen "PORTFÖY" kelimesine kadarki (dahil) kısımdır. Bu desene uymayan
+ * (ör. doğrudan bir ihraççı tarafından çıkarılan varlık finansmanı fonu)
+ * unvanlarda çıkarılamaz ve null döner — arayüzde "—" gösterilir. Bu bir
+ * TAHMİN değil, TEFAS'ın kendi unvan alanından yapılan yapısal bir
+ * çıkarımdır; uydurma veri eklenmez.
+ */
+export function extractManagementCompany(rawTitle: string): string | null {
+  const marker = " PORTFÖY";
+  const idx = rawTitle.toLocaleUpperCase("tr-TR").indexOf(marker);
+  if (idx === -1) return null;
+  return toTitleCaseTR(rawTitle.slice(0, idx + marker.length));
+}
+
+async function fetchBulkPage(
+  fonTipi: string,
+  basSira: number,
+  bitSira: number,
+  now: Date,
+  timeoutMs: number,
+  fetchImpl: typeof fetch,
+): Promise<{ rows: TefasBulkRow[]; toplamSayi: number }> {
+  const start = new Date(now.getTime() - BULK_LOOKBACK_DAYS * 24 * 60 * 60 * 1000);
+  const body = {
+    fonTipi,
+    fonKodu: null,
+    aramaMetni: "KATILIM",
+    fonTurKod: null,
+    fonGrubu: null,
+    sfonTurKod: null,
+    fonTurAciklama: null,
+    kurucuKod: null,
+    basTarih: formatYmd(start),
+    bitTarih: formatYmd(now),
+    basSira,
+    bitSira,
+    dil: "TR",
+  };
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetchImpl(TEFAS_URL, {
+      method: "POST",
+      headers: DEFAULT_HEADERS,
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+
+    if (!res.ok) {
+      throw new RetryableTefasError(`TEFAS toplu liste HTTP ${res.status} — fonTipi=${fonTipi}`);
+    }
+
+    const json = (await res.json()) as {
+      resultList?: TefasBulkRow[] | null;
+      errorMessage?: string | null;
+      toplamSayi?: number;
+    };
+
+    if (json.errorMessage) {
+      throw new Error(`TEFAS toplu liste hatası (fonTipi=${fonTipi}): ${json.errorMessage}`);
+    }
+
+    return {
+      rows: Array.isArray(json.resultList) ? json.resultList : [],
+      toplamSayi: typeof json.toplamSayi === "number" ? json.toplamSayi : 0,
+    };
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+type LatestRowByCode = Map<string, { row: TefasBulkRow; fonTipi: "YAT" | "BYF"; priceDate: string }>;
+
+/**
+ * Tek bir fon tipi (YAT veya BYF) için tüm sayfaları çeker. Bu fonksiyon
+ * BİLEREK diğer fon tipinden bağımsız çalışır (fetchAllParticipationFunds
+ * içinde Promise.allSettled ile izole edilir) — biri ağ sorunu yaşarsa
+ * diğerinin sonuçları yine de kullanılır, tüm senkronizasyon iptal olmaz.
+ */
+async function fetchOneFonTipi(
+  fonTipi: "YAT" | "BYF",
+  timeoutMs: number,
+  fetchImpl: typeof fetch,
+  now: Date,
+): Promise<LatestRowByCode> {
+  const latestByCode: LatestRowByCode = new Map();
+  let basSira = 1;
+  let toplamSayi = Number.POSITIVE_INFINITY;
+  let pages = 0;
+
+  while (basSira <= toplamSayi && pages < MAX_BULK_PAGES_PER_TYPE) {
+    let page: { rows: TefasBulkRow[]; toplamSayi: number } | undefined;
+    let lastErr: unknown;
+    for (let attempt = 0; attempt <= 1; attempt++) {
+      try {
+        page = await fetchBulkPage(fonTipi, basSira, basSira + BULK_PAGE_SIZE - 1, now, timeoutMs, fetchImpl);
+        break;
+      } catch (err) {
+        lastErr = err;
+        if (err instanceof RetryableTefasError && attempt === 0) {
+          await sleep(500);
+          continue;
+        }
+        throw err instanceof Error ? err : new Error(String(lastErr));
+      }
+    }
+    if (!page) throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
+
+    toplamSayi = page.toplamSayi;
+    for (const row of page.rows) {
+      const code = (row.fonKodu ?? "").toString().trim().toUpperCase();
+      if (!code) continue;
+      let priceDate: string;
+      try {
+        priceDate = parseTefasDate(row.tarih ?? "");
+      } catch {
+        continue; // Ayrıştırılamayan tarihli satır sessizce atlanır; uydurulmaz.
+      }
+      const existing = latestByCode.get(code);
+      if (!existing || priceDate > existing.priceDate) {
+        latestByCode.set(code, { row, fonTipi, priceDate });
+      }
+    }
+
+    basSira += BULK_PAGE_SIZE;
+    pages++;
+  }
+
+  return latestByCode;
+}
+
+export interface BulkFetchOutcome {
+  funds: ParsedCatalogFund[];
+  /**
+   * Bir fon tipinin ("YAT"/"BYF") toplu çekimi tamamen başarısız olursa
+   * (ör. TEFAS'a ağ zaman aşımı) burada insan-okunur bir mesaj olarak yer
+   * alır; diğer fon tipinden gelen sonuçlar yine de kullanılır — tek bir
+   * kategorideki geçici bir sorun tüm senkronizasyonu iptal etmez.
+   */
+  errors: string[];
+}
+
+/**
+ * TEFAS'taki (YAT + BYF fon tiplerinde) başlığında "katılım" geçen TÜM
+ * fonları döner. İki fon tipi PARALEL ve BİRBİRİNDEN BAĞIMSIZ çekilir —
+ * hem toplam süreyi kısaltmak (Edge Function'ın çalışma süresi sınırına
+ * karşı güvenlik payı) hem de birinin geçici ağ sorunundan etkilenmeden
+ * diğerinin sonuçlarının kullanılabilmesini sağlamak için. Ayrıştırılamayan
+ * tarihli tekil satırlar sessizce atlanır (uydurulmaz); ancak bir fon
+ * tipinin tamamı başarısız olursa bu `errors` listesinde raporlanır.
+ */
+export async function fetchAllParticipationFunds(
+  options: FetchTefasOptions = {},
+): Promise<BulkFetchOutcome> {
+  const { timeoutMs = 12000, fetchImpl = fetch, now = new Date() } = options;
+
+  const settled = await Promise.allSettled(
+    BULK_FON_TIPI_CANDIDATES.map((fonTipi) => fetchOneFonTipi(fonTipi, timeoutMs, fetchImpl, now)),
+  );
+
+  const latestByCode: LatestRowByCode = new Map();
+  const errors: string[] = [];
+
+  settled.forEach((outcome, i) => {
+    const fonTipi = BULK_FON_TIPI_CANDIDATES[i];
+    if (outcome.status === "rejected") {
+      const message = outcome.reason instanceof Error ? outcome.reason.message : String(outcome.reason);
+      errors.push(`TEFAS toplu liste (fonTipi=${fonTipi}) alınamadı: ${message}`);
+      return;
+    }
+    for (const [code, entry] of outcome.value) {
+      const existing = latestByCode.get(code);
+      if (!existing || entry.priceDate > existing.priceDate) {
+        latestByCode.set(code, entry);
+      }
+    }
+  });
+
+  const funds: ParsedCatalogFund[] = [];
+  for (const [code, { row, fonTipi, priceDate }] of latestByCode) {
+    const rawTitle = (row.fonUnvan ?? "").toString().trim();
+    funds.push({
+      code,
+      rawTitle,
+      displayName: toTitleCaseTR(rawTitle),
+      managementCompany: extractManagementCompany(rawTitle),
+      fonTipi,
+      priceDate,
+      price: toNumber(row.fiyat) ?? 0,
+      fundSize: toNumber(row.portfoyBuyukluk),
+      investorCount: toNumber(row.kisiSayisi),
+    });
+  }
+  return { funds, errors };
 }

@@ -12,6 +12,8 @@ export type FundAssetClass = Exclude<AssetClass, "DEPOSIT">;
 export interface FundPriceInput {
   fundId: string;
   fundCode: string;
+  /** Yalnızca gösterim amaçlı; hesaplama mantığını etkilemez. */
+  fundName?: string;
   assetClass: FundAssetClass;
   /** `currency` cinsinden birim fiyat. */
   price: Decimal.Value;
@@ -56,6 +58,7 @@ export interface FundLineResult {
   assetClass: FundAssetClass;
   fundId: string;
   fundCode: string;
+  fundName?: string;
   percentage: number;
   targetAmount: Decimal;
   /** TL cinsinden efektif birim fiyat (döviz ise dönüştürülmüş). */

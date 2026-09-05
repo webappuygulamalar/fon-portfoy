@@ -1,18 +1,10 @@
 import type { AssetClass } from "../../lib/constants";
 import type { FundAssetClass } from "../calculation/types";
 import type {
-  ModelDepositBucketRow,
   ModelPreferredFundRow,
   ModelProfileAllocationRow,
   RiskProfileRow,
 } from "../../services/types";
-
-export interface ProfileDepositBucket {
-  id: string;
-  label: string;
-  weightPercent: number;
-  sortOrder: number;
-}
 
 export interface ProfileModel {
   profileId: string;
@@ -22,7 +14,6 @@ export interface ProfileModel {
   sortOrder: number;
   allocations: Partial<Record<AssetClass, number>>;
   preferredFundIdByAssetClass: Partial<Record<FundAssetClass, string>>;
-  depositBuckets: ProfileDepositBucket[];
 }
 
 /**
@@ -35,7 +26,6 @@ export function buildProfileModels(
   profiles: RiskProfileRow[],
   allocations: ModelProfileAllocationRow[],
   preferredFunds: ModelPreferredFundRow[],
-  depositBuckets: ModelDepositBucketRow[],
 ): ProfileModel[] {
   return [...profiles]
     .sort((a, b) => a.sort_order - b.sort_order)
@@ -61,16 +51,6 @@ export function buildProfileModels(
         }
       }
 
-      const buckets = depositBuckets
-        .filter((b) => b.profile_id === profile.id)
-        .sort((a, b) => a.sort_order - b.sort_order)
-        .map((b) => ({
-          id: b.id,
-          label: b.label,
-          weightPercent: Number(b.weight_percent),
-          sortOrder: b.sort_order,
-        }));
-
       return {
         profileId: profile.id,
         key: profile.key,
@@ -81,7 +61,6 @@ export function buildProfileModels(
         preferredFundIdByAssetClass: Object.fromEntries(preferredByClass) as Partial<
           Record<FundAssetClass, string>
         >,
-        depositBuckets: buckets,
       };
     });
 }

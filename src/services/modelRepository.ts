@@ -1,6 +1,5 @@
 import { supabase } from "./supabaseClient";
 import type {
-  ModelDepositBucketRow,
   ModelPreferredFundRow,
   ModelProfileAllocationRow,
   ModelVersionRow,
@@ -85,24 +84,11 @@ export async function getPreferredFundsForVersion(
   return data;
 }
 
-export async function getDepositBucketsForVersion(
-  modelVersionId: string,
-): Promise<ModelDepositBucketRow[]> {
-  const { data, error } = await supabase
-    .from("model_deposit_buckets")
-    .select("*")
-    .eq("model_version_id", modelVersionId)
-    .order("sort_order");
-  if (error) throw error;
-  return data;
-}
-
 export interface PublishedModelBundle {
   version: ModelVersionRow;
   profiles: RiskProfileRow[];
   allocations: ModelProfileAllocationRow[];
   preferredFunds: ModelPreferredFundRow[];
-  depositBuckets: ModelDepositBucketRow[];
 }
 
 /** Kullanıcı ekranı için gereken her şeyi tek seferde toplar. */
@@ -110,14 +96,13 @@ export async function loadPublishedModelBundle(): Promise<PublishedModelBundle |
   const version = await getCurrentPublishedModelVersion();
   if (!version) return null;
 
-  const [profiles, allocations, preferredFunds, depositBuckets] = await Promise.all([
+  const [profiles, allocations, preferredFunds] = await Promise.all([
     listActiveRiskProfiles(),
     getAllocationsForVersion(version.id),
     getPreferredFundsForVersion(version.id),
-    getDepositBucketsForVersion(version.id),
   ]);
 
-  return { version, profiles, allocations, preferredFunds, depositBuckets };
+  return { version, profiles, allocations, preferredFunds };
 }
 
 // ---- Admin: taslak / yayınlama akışı ----
@@ -133,10 +118,9 @@ export async function listModelVersions(): Promise<ModelVersionRow[]> {
 
 /** En son versiyonun (yayınlanmış veya taslak) tam içeriğinden yeni bir taslak oluşturur. */
 export async function createDraftFromVersion(sourceVersionId: string): Promise<ModelVersionRow> {
-  const [allocations, preferredFunds, depositBuckets] = await Promise.all([
+  const [allocations, preferredFunds] = await Promise.all([
     getAllocationsForVersion(sourceVersionId),
     getPreferredFundsForVersion(sourceVersionId),
-    getDepositBucketsForVersion(sourceVersionId),
   ]);
 
   const { data: draft, error: draftErr } = await supabase
@@ -165,19 +149,6 @@ export async function createDraftFromVersion(sourceVersionId: string): Promise<M
         profile_id: p.profile_id,
         asset_class: p.asset_class,
         fund_id: p.fund_id,
-      })),
-    );
-    if (error) throw error;
-  }
-
-  if (depositBuckets.length > 0) {
-    const { error } = await supabase.from("model_deposit_buckets").insert(
-      depositBuckets.map((b) => ({
-        model_version_id: draft.id,
-        profile_id: b.profile_id,
-        label: b.label,
-        weight_percent: b.weight_percent,
-        sort_order: b.sort_order,
       })),
     );
     if (error) throw error;
@@ -223,32 +194,6 @@ export async function setPreferredFund(input: {
   if (deleteErr) throw deleteErr;
 
   const { error } = await supabase.from("model_preferred_funds").insert(input);
-  if (error) throw error;
-}
-
-export async function replaceDepositBuckets(
-  modelVersionId: string,
-  profileId: string,
-  buckets: Array<{ label: string; weight_percent: number; sort_order: number }>,
-): Promise<void> {
-  const { error: deleteErr } = await supabase
-    .from("model_deposit_buckets")
-    .delete()
-    .eq("model_version_id", modelVersionId)
-    .eq("profile_id", profileId);
-  if (deleteErr) throw deleteErr;
-
-  if (buckets.length === 0) return;
-
-  const { error } = await supabase.from("model_deposit_buckets").insert(
-    buckets.map((b) => ({
-      model_version_id: modelVersionId,
-      profile_id: profileId,
-      label: b.label,
-      weight_percent: b.weight_percent,
-      sort_order: b.sort_order,
-    })),
-  );
   if (error) throw error;
 }
 

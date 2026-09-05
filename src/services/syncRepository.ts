@@ -1,3 +1,4 @@
+import { FunctionsFetchError, FunctionsHttpError, FunctionsRelayError } from "@supabase/supabase-js";
 import { supabase } from "./supabaseClient";
 import type { SyncRunRow } from "./types";
 
@@ -27,6 +28,24 @@ export async function triggerManualTefasSync(): Promise<{
     method: "POST",
     body: { trigger: "manual" },
   });
-  if (error) throw error;
+  if (error) throw new Error(describeSyncError(error));
   return data;
+}
+
+/**
+ * `functions.invoke` üç farklı hata sınıfı fırlatabilir (ağ hatası, relay
+ * hatası, fonksiyonun kendi hata yanıtı). Kullanıcıya ham İngilizce SDK
+ * mesajı yerine anlaşılır, yeniden deneme öneren bir Türkçe mesaj gösterilir.
+ */
+function describeSyncError(error: unknown): string {
+  if (error instanceof FunctionsFetchError) {
+    return "TEFAS senkronizasyon fonksiyonuna ulaşılamadı (ağ zaman aşımı olabilir). Lütfen birkaç saniye sonra tekrar deneyin.";
+  }
+  if (error instanceof FunctionsRelayError) {
+    return "Senkronizasyon sırasında geçici bir sunucu hatası oluştu. Lütfen tekrar deneyin.";
+  }
+  if (error instanceof FunctionsHttpError) {
+    return "Senkronizasyon başarısız oldu; çalışma geçmişindeki hata özetine bakın veya tekrar deneyin.";
+  }
+  return error instanceof Error ? error.message : "Senkronizasyon tetiklenemedi. Lütfen tekrar deneyin.";
 }

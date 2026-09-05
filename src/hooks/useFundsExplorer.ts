@@ -6,10 +6,14 @@ export interface FundExplorerRow {
   id: string;
   code: string;
   name: string;
-  managementCompany: string;
-  assetClass: AssetClass;
+  managementCompany: string | null;
+  /** null: model dışı (5 model sınıfından hiçbirine uymuyor). */
+  assetClass: AssetClass | null;
+  catalogCategory: string | null;
   fundType: string | null;
   currency: string;
+  riskValue: number | null;
+  isSubstitutionEligible: boolean;
   price: number | null;
   priceDate: string | null;
   fundSize: number | null;
@@ -56,8 +60,11 @@ export function useFundsExplorer(): UseFundsExplorerResult {
               name: f.name,
               managementCompany: f.management_company,
               assetClass: f.asset_class,
+              catalogCategory: f.catalog_category,
               fundType: f.fund_type,
               currency: f.currency,
+              riskValue: f.risk_value,
+              isSubstitutionEligible: f.is_substitution_eligible,
               price: price ? Number(price.price) : null,
               priceDate: price ? price.price_date : null,
               fundSize: price?.fund_size ? Number(price.fund_size) : null,

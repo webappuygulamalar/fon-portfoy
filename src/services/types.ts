@@ -8,14 +8,33 @@ export interface FundRow {
   id: string;
   code: string;
   name: string;
-  management_company: string;
-  asset_class: AssetClass;
+  /** Fon başlığından çıkarılamadıysa null ("—" gösterilir). */
+  management_company: string | null;
+  /**
+   * Fonun ait olduğu model varlık sınıfı. NULL, bu fonun 5 model sınıfından
+   * hiçbirine uymadığı (ör. kira sertifikası, çoklu varlık, fon sepeti) veya
+   * sınıflandırmanın belirsiz olduğu anlamına gelir — bu tür fonlar
+   * kataloğda görünür ama model fon değişiminde seçilemez.
+   */
+  asset_class: AssetClass | null;
   fund_type: string | null;
   currency: string;
   tefas_fetch_code: string;
   is_active: boolean;
   verification_needed: boolean;
   verification_note: string | null;
+  /** TEFAS fon başlığında "katılım" tespit edildi mi. */
+  is_participation_fund: boolean;
+  /** TEFAS/referans kataloğundan türetilen, gösterim amaçlı ince kategori. */
+  catalog_category: string | null;
+  /**
+   * true ise bu fon, model portföyde kendi asset_class'ı için kullanıcı
+   * tarafından fon değişimi amacıyla seçilebilir (asset_class dolu VE
+   * sınıflandırma güvenilir olmalı — bkz. verification_needed).
+   */
+  is_substitution_eligible: boolean;
+  /** TEFAS resmi risk değeri (1-7). Canlı kaynağı yoksa null ("—"). */
+  risk_value: number | null;
 }
 
 export interface FundPriceRow {
@@ -76,15 +95,6 @@ export interface ModelPreferredFundRow {
   profile_id: string | null;
   asset_class: AssetClass;
   fund_id: string;
-}
-
-export interface ModelDepositBucketRow {
-  id: string;
-  model_version_id: string;
-  profile_id: string;
-  label: string;
-  weight_percent: string;
-  sort_order: number;
 }
 
 export interface FxRateRow {

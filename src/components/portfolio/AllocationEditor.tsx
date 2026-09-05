@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import { ASSET_CLASS_LABELS, type AssetClass } from "../../lib/constants";
 import { resolveFundSelections } from "../../domain/calculation/buildInput";
 import type { FundAssetClass } from "../../domain/calculation/types";
@@ -13,9 +14,7 @@ interface AllocationEditorProps {
   profile: ProfileModel;
   fundsById: Record<string, FundRow>;
   latestPriceByFundId: Record<string, FundPriceRow>;
-  allFunds: FundRow[];
   overrides: Partial<Record<FundAssetClass, string>>;
-  onOverrideChange: (assetClass: FundAssetClass, fundId: string | null) => void;
   onResetOverrides: () => void;
 }
 
@@ -23,9 +22,7 @@ export function AllocationEditor({
   profile,
   fundsById,
   latestPriceByFundId,
-  allFunds,
   overrides,
-  onOverrideChange,
   onResetOverrides,
 }: AllocationEditorProps) {
   const selections = resolveFundSelections(profile, fundsById, latestPriceByFundId, overrides);
@@ -38,7 +35,7 @@ export function AllocationEditor({
         <div className="banner banner-warning row-between">
           <span>Standart model değiştirildi.</span>
           <button className="btn btn-secondary btn-sm" onClick={onResetOverrides}>
-            Standart seçime dön
+            Standart fona dön
           </button>
         </div>
       )}
@@ -48,22 +45,11 @@ export function AllocationEditor({
           <strong>{ASSET_CLASS_LABELS.DEPOSIT}</strong>
           <Badge>{formatPercent(depositPct)}</Badge>
         </div>
-        {profile.depositBuckets.length > 0 && (
-          <p className="disclaimer" style={{ marginTop: 8 }}>
-            Vade dilimleri:{" "}
-            {profile.depositBuckets
-              .map((b) => `${b.label} (${formatPercent(Math.round(b.weightPercent * 10) / 10)})`)
-              .join(", ")}
-          </p>
-        )}
       </div>
 
       {selections.map((sel) => {
         const assetClass = sel.assetClass as AssetClass;
         const percentage = profile.allocations[assetClass] ?? 0;
-        const alternatives = allFunds.filter(
-          (f) => f.asset_class === sel.assetClass && f.is_active,
-        );
         const stale = sel.price ? isPriceStale(sel.price.price_date) : false;
 
         return (
@@ -96,25 +82,11 @@ export function AllocationEditor({
                   {sel.fund.verification_needed && <Badge variant="gold">Doğrulama gerekli</Badge>}
                 </div>
 
-                {alternatives.length > 1 && (
-                  <select
-                    className="select"
-                    value={sel.fundId ?? ""}
-                    onChange={(e) => {
-                      const value = e.target.value;
-                      const isDefault =
-                        !overrides[sel.assetClass] &&
-                        value === profile.preferredFundIdByAssetClass[sel.assetClass];
-                      onOverrideChange(sel.assetClass, isDefault ? null : value);
-                    }}
-                  >
-                    {alternatives.map((f) => (
-                      <option key={f.id} value={f.id}>
-                        {f.code} — {f.name}
-                      </option>
-                    ))}
-                  </select>
-                )}
+                <div>
+                  <Link className="btn btn-secondary btn-sm" to={`/fon-degistir/${sel.assetClass}`}>
+                    Fonu değiştir
+                  </Link>
+                </div>
               </div>
             ) : (
               <Badge variant="danger">Bu varlık sınıfı için standart fon tanımlı değil</Badge>

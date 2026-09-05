@@ -43,12 +43,7 @@ export function usePublishedModel(): UsePublishedModelResult {
           return;
         }
 
-        const profiles = buildProfileModels(
-          bundle.profiles,
-          bundle.allocations,
-          bundle.preferredFunds,
-          bundle.depositBuckets,
-        );
+        const profiles = buildProfileModels(bundle.profiles, bundle.allocations, bundle.preferredFunds);
 
         setData({
           version: bundle.version,

@@ -1,4 +1,4 @@
-import { ASSET_CLASS_LABELS, type AssetClass } from "../../lib/constants";
+import { ASSET_CLASS_LABELS } from "../../lib/constants";
 import type { PortfolioCalculationResult, FundLineResult } from "../../domain/calculation/types";
 import { formatDateTR, formatNumber, formatPercent, formatTRY } from "../../lib/format";
 import { Badge } from "../ui/Badge";
@@ -53,8 +53,7 @@ export function CalculationSummary({ result }: CalculationSummaryProps) {
               <th>Hedef Tutar</th>
               <th>Birim Fiyat</th>
               <th>Pay Adedi</th>
-              <th>Gerçekleşen Tutar</th>
-              <th>Kalan</th>
+              <th>Hesaplanan Tutar</th>
             </tr>
           </thead>
           <tbody>
@@ -65,7 +64,6 @@ export function CalculationSummary({ result }: CalculationSummaryProps) {
               <td>—</td>
               <td>—</td>
               <td className="tabular-nums">{formatTRY(result.depositAmount)}</td>
-              <td>—</td>
             </tr>
             {allLines.map((line) => (
               <FundRowDesktop key={line.assetClass} line={line} />
@@ -77,7 +75,6 @@ export function CalculationSummary({ result }: CalculationSummaryProps) {
               <td>—</td>
               <td>—</td>
               <td className="tabular-nums">{formatTRY(result.cashBalance)}</td>
-              <td>—</td>
             </tr>
           </tbody>
         </table>
@@ -109,48 +106,18 @@ export function CalculationSummary({ result }: CalculationSummaryProps) {
             <span className="tabular-nums">{formatTRY(result.totals.depositAmount)}</span>
           </div>
           <div className="kv-row">
-            <span className="k">Fonlara yatırılan tutar</span>
+            <span className="k">Fonlara ayrılan toplam tutar</span>
             <span className="tabular-nums">{formatTRY(result.totals.investedInFunds)}</span>
           </div>
           <div className="kv-row">
-            <span className="k">PPF'ye aktarılan yuvarlama farkı</span>
-            <span className="tabular-nums">{formatTRY(result.totals.carriedToMoneyMarket)}</span>
-          </div>
-          <div className="kv-row">
-            <span className="k">Cari hesap bakiyesi</span>
+            <span className="k">Cari hesapta kalacak tutar</span>
             <span className="tabular-nums">{formatTRY(result.totals.cashBalance)}</span>
           </div>
           <hr className="divider" />
           <div className="kv-row">
-            <span className="k">Genel toplam kontrolü</span>
+            <span className="k">Toplam Portföy</span>
             <span className="tabular-nums">{formatTRY(result.totals.grandTotalCheck)}</span>
           </div>
-        </div>
-      </div>
-
-      <div className="card">
-        <p className="section-title">Planlanan / Gerçekleşen Dağılım</p>
-        <div className="table-scroll" style={{ marginTop: 10 }}>
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Varlık Sınıfı</th>
-                <th>Planlanan %</th>
-                <th>Gerçekleşen %</th>
-                <th>Gerçekleşen Tutar</th>
-              </tr>
-            </thead>
-            <tbody>
-              {result.distribution.map((row) => (
-                <tr key={row.assetClass}>
-                  <td>{row.assetClass === "CASH" ? "Cari Hesap" : ASSET_CLASS_LABELS[row.assetClass as AssetClass]}</td>
-                  <td className="tabular-nums">{formatPercent(row.plannedPercentage)}</td>
-                  <td className="tabular-nums">{formatPercent(Math.round(row.actualPercentage.toNumber() * 100) / 100)}</td>
-                  <td className="tabular-nums">{formatTRY(row.actualAmount)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
         </div>
       </div>
     </div>
@@ -177,10 +144,8 @@ function FundRowDesktop({ line }: { line: FundLineResult }) {
   return (
     <tr>
       <td>
-        {ASSET_CLASS_LABELS[line.assetClass]}
-        <div className="disclaimer">
-          {line.fundCode}
-        </div>
+        {line.fundName ?? ASSET_CLASS_LABELS[line.assetClass]}
+        <div className="disclaimer">{line.fundCode}</div>
       </td>
       <td className="tabular-nums">{formatPercent(line.percentage)}</td>
       <td className="tabular-nums">{formatTRY(line.targetAmount)}</td>
@@ -189,7 +154,6 @@ function FundRowDesktop({ line }: { line: FundLineResult }) {
       </td>
       <td className="tabular-nums">{line.shareCount}</td>
       <td className="tabular-nums">{formatTRY(line.actualAmount)}</td>
-      <td className="tabular-nums">{formatTRY(line.remainder)}</td>
     </tr>
   );
 }
@@ -198,7 +162,7 @@ function FundCardMobile({ line }: { line: FundLineResult }) {
   return (
     <div className="record-card">
       <div className="row-between">
-        <strong>{ASSET_CLASS_LABELS[line.assetClass]}</strong>
+        <strong>{line.fundName ?? ASSET_CLASS_LABELS[line.assetClass]}</strong>
         <Badge>{formatPercent(line.percentage)}</Badge>
       </div>
       <p className="disclaimer" style={{ marginTop: 4 }}>
@@ -220,12 +184,8 @@ function FundCardMobile({ line }: { line: FundLineResult }) {
           <span className="tabular-nums">{line.shareCount}</span>
         </div>
         <div className="kv-row">
-          <span className="k">Gerçekleşen tutar</span>
+          <span className="k">Hesaplanan tutar</span>
           <span className="tabular-nums">{formatTRY(line.actualAmount)}</span>
-        </div>
-        <div className="kv-row">
-          <span className="k">Kalan</span>
-          <span className="tabular-nums">{formatTRY(line.remainder)}</span>
         </div>
         {line.isStalePrice && <Badge variant="warning">Eski fiyat</Badge>}
         {line.fxRateUsed && (

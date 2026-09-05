@@ -1,4 +1,4 @@
-// Supabase Edge Function: TEFAS fiyat senkronizasyonu.
+// Supabase Edge Function: TEFAS katılım fonu kataloğu + fiyat senkronizasyonu.
 //
 // İki çağrı yolu:
 //   1. Cron (pg_cron -> pg_net), `x-cron-secret` header'ı ile.
@@ -8,16 +8,40 @@
 //
 // service role anahtarı yalnızca bu sunucu tarafı ortamda kullanılır,
 // tarayıcıya asla gönderilmez.
+//
+// Akış: TEFAS'ın toplu liste endpoint'inden (YAT+BYF, "katılım" aramasıyla)
+// TÜM katılım fonu evreni TEK seferde keşfedilir, her fon sınıflandırılır
+// (classifyFund.ts) ve `funds` + `fund_prices` tablolarına idempotent
+// upsert edilir (code / (fund_id,price_date,currency) üzerinden — tekrar
+// çalıştırma yeni satır oluşturmaz). Listeden geçici olarak kaybolan bir
+// fonun geçmiş fiyat kaydı asla silinmez; sadece o gün için güncellenmez.
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { fetchLatestFundPrice } from "./tefasAdapter.ts";
+import { classifyFund } from "./classifyFund.ts";
+import { fetchAllParticipationFunds } from "./tefasAdapter.ts";
 import { jsonResponse } from "../_shared/jsonResponse.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const CRON_SECRET = Deno.env.get("CRON_SECRET");
 
-// Fonlar arasında bekleme: TEFAS'a düşük hacimli, nazik istek göndermek için.
-const DELAY_BETWEEN_FUNDS_MS = 2000;
+// Supabase upsert isteklerini makul boyutta tutmak için toplu işlem boyutu.
+const UPSERT_BATCH_SIZE = 300;
+
+interface FundUpsertRow {
+  code: string;
+  name: string;
+  management_company: string | null;
+  asset_class: "MONEY_MARKET" | "BIST_EQUITY" | "GOLD" | "FX" | null;
+  fund_type: string;
+  currency: "TRY";
+  tefas_fetch_code: string;
+  is_active: true;
+  verification_needed: boolean;
+  verification_note: string | null;
+  is_participation_fund: true;
+  catalog_category: string;
+  is_substitution_eligible: boolean;
+}
 
 Deno.serve(async (req: Request) => {
   if (req.method !== "POST") {
@@ -73,87 +97,141 @@ Deno.serve(async (req: Request) => {
     );
   }
 
-  const { data: funds, error: fundsErr } = await admin
-    .from("funds")
-    .select("id, code, tefas_fetch_code, currency")
-    .eq("is_active", true);
+  // Bu noktadan sonra HER ŞEY tek bir try/catch içindedir: beklenmedik bir
+  // istisna (ör. bir upsert çağrısının kendisinin fırlatması) bile sync_runs
+  // kaydını sonsuza dek "running" bırakmaz — her zaman "failed" olarak
+  // kapatılır ve hata mesajı kaydedilir. Ağ/işlem hataları asla iz
+  // bırakmadan kaybolmaz.
+  try {
+    // TEFAS'a iki fon tipi (YAT+BYF) PARALEL istenir; biri zaman aşımına
+    // uğrarsa diğerinin sonuçları yine de kullanılır (bkz. tefasAdapter.ts).
+    // Kısa timeout + paralel çağrı, Edge Function'ın çalışma süresi
+    // sınırını aşma riskini azaltır (önceki sürümde sıralı + uzun timeout,
+    // canlıda "Failed to send a request" ile sonuçlanan bir zaman aşımına
+    // yol açmıştı).
+    const { funds: catalog, errors: catalogErrors } = await fetchAllParticipationFunds({ timeoutMs: 12000 });
 
-  if (fundsErr || !funds) {
+    if (catalog.length === 0) {
+      const message =
+        catalogErrors.length > 0
+          ? catalogErrors.join("; ")
+          : "TEFAS toplu listesi boş sonuç döndürdü.";
+      await admin
+        .from("sync_runs")
+        .update({
+          finished_at: new Date().toISOString(),
+          status: "failed",
+          error_summary: `TEFAS'tan hiçbir katılım fonu alınamadı: ${message}`.slice(0, 4000),
+        })
+        .eq("id", runRow.id);
+      return jsonResponse({ error: "TEFAS toplu liste alınamadı", detail: message }, 502);
+    }
+
+    const fundsChecked = catalog.length;
+    let fundsFailed = 0;
+    let fundsUpdated = 0;
+    const failedCodes: string[] = [];
+    const errors: string[] = [...catalogErrors];
+
+    const fundRows: FundUpsertRow[] = catalog.map((f) => {
+      const classification = classifyFund(f.code, f.rawTitle);
+      return {
+        code: f.code,
+        name: f.displayName,
+        management_company: f.managementCompany,
+        asset_class: classification.modelAssetClass,
+        fund_type: f.fonTipi === "YAT" ? "Yatırım Fonu" : "Borsa Yatırım Fonu",
+        currency: "TRY",
+        tefas_fetch_code: f.code,
+        is_active: true,
+        verification_needed: classification.needsVerification,
+        verification_note: classification.verificationNote,
+        is_participation_fund: true,
+        catalog_category: classification.catalogCategory,
+        is_substitution_eligible: classification.modelAssetClass !== null && !classification.needsVerification,
+      };
+    });
+
+    // 1) Fon kataloğu upsert'i (code üzerinden idempotent — mevcut fonların id'si korunur).
+    const fundIdByCode = new Map<string, string>();
+    for (let i = 0; i < fundRows.length; i += UPSERT_BATCH_SIZE) {
+      const batch = fundRows.slice(i, i + UPSERT_BATCH_SIZE);
+      const { data, error } = await admin
+        .from("funds")
+        .upsert(batch, { onConflict: "code" })
+        .select("id, code");
+      if (error) {
+        fundsFailed += batch.length;
+        batch.forEach((b) => failedCodes.push(b.code));
+        errors.push(`funds upsert (${i}-${i + batch.length}): ${error.message}`);
+        continue;
+      }
+      for (const row of data ?? []) fundIdByCode.set(row.code as string, row.id as string);
+    }
+
+    // 2) Fiyat upsert'i — yalnızca geçerli (>0) fiyatlı fonlar için. TEFAS'ta
+    // geçici olarak 0/askıda görünen bir fon için o günün fiyatı uydurulmaz;
+    // fon kataloğa yine de eklenir/güncellenir, sadece bugünün fiyat satırı atlanır.
+    const priceRows = catalog
+      .filter((f) => fundIdByCode.has(f.code) && f.price > 0)
+      .map((f) => ({
+        fund_id: fundIdByCode.get(f.code)!,
+        price_date: f.priceDate,
+        currency: "TRY",
+        price: f.price,
+        fund_size: f.fundSize,
+        investor_count: f.investorCount,
+        source: "TEFAS",
+        fetched_at: new Date().toISOString(),
+        note: null,
+      }));
+
+    for (let i = 0; i < priceRows.length; i += UPSERT_BATCH_SIZE) {
+      const batch = priceRows.slice(i, i + UPSERT_BATCH_SIZE);
+      const { error } = await admin
+        .from("fund_prices")
+        .upsert(batch, { onConflict: "fund_id,price_date,currency" });
+      if (error) {
+        errors.push(`fund_prices upsert (${i}-${i + batch.length}): ${error.message}`);
+        continue;
+      }
+      fundsUpdated += batch.length;
+    }
+
+    const status: "success" | "partial" | "failed" =
+      fundsFailed === 0 && catalogErrors.length === 0 ? "success" : fundsUpdated > 0 ? "partial" : "failed";
+
+    await admin
+      .from("sync_runs")
+      .update({
+        finished_at: new Date().toISOString(),
+        status,
+        funds_checked: fundsChecked,
+        funds_updated: fundsUpdated,
+        funds_failed: fundsFailed,
+        failed_fund_codes: failedCodes,
+        catalog_synced: true,
+        error_summary: errors.length > 0 ? errors.join("\n").slice(0, 4000) : null,
+      })
+      .eq("id", runRow.id);
+
+    return jsonResponse({
+      status,
+      fundsChecked,
+      fundsUpdated,
+      fundsFailed,
+      failedFundCodes: failedCodes,
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
     await admin
       .from("sync_runs")
       .update({
         finished_at: new Date().toISOString(),
         status: "failed",
-        error_summary: `funds tablosu okunamadı: ${fundsErr?.message ?? "bilinmeyen hata"}`,
+        error_summary: `Beklenmeyen hata: ${message}`.slice(0, 4000),
       })
       .eq("id", runRow.id);
-    return jsonResponse({ error: "funds tablosu okunamadı" }, 500);
+    return jsonResponse({ error: "Senkronizasyon sırasında beklenmeyen hata oluştu", detail: message }, 500);
   }
-
-  let updated = 0;
-  let failed = 0;
-  const failedCodes: string[] = [];
-  const errors: string[] = [];
-
-  for (let i = 0; i < funds.length; i++) {
-    const fund = funds[i];
-    try {
-      const result = await fetchLatestFundPrice(fund.tefas_fetch_code, {
-        timeoutMs: 8000,
-      });
-
-      // Idempotent upsert: aynı (fund_id, price_date, currency) için tekrar
-      // çalıştırma yeni satır oluşturmaz, mevcut satırı günceller.
-      const { error: upsertErr } = await admin.from("fund_prices").upsert(
-        {
-          fund_id: fund.id,
-          price_date: result.priceDate,
-          currency: fund.currency,
-          price: result.price,
-          fund_size: result.fundSize,
-          investor_count: result.investorCount,
-          source: "TEFAS",
-          fetched_at: new Date().toISOString(),
-          note: null,
-        },
-        { onConflict: "fund_id,price_date,currency" },
-      );
-      if (upsertErr) throw new Error(upsertErr.message);
-      updated++;
-    } catch (err) {
-      failed++;
-      failedCodes.push(fund.code);
-      errors.push(`${fund.code}: ${err instanceof Error ? err.message : String(err)}`);
-      // Son başarılı fiyatı ASLA silmeyiz/üzerine boş yazmayız — bu fon
-      // için sadece bu turda güncelleme yapılmaz, önceki satır kalır.
-    }
-
-    if (i < funds.length - 1) {
-      await new Promise((resolve) => setTimeout(resolve, DELAY_BETWEEN_FUNDS_MS));
-    }
-  }
-
-  const status: "success" | "partial" | "failed" =
-    failed === 0 ? "success" : updated > 0 ? "partial" : "failed";
-
-  await admin
-    .from("sync_runs")
-    .update({
-      finished_at: new Date().toISOString(),
-      status,
-      funds_checked: funds.length,
-      funds_updated: updated,
-      funds_failed: failed,
-      failed_fund_codes: failedCodes,
-      error_summary: errors.length > 0 ? errors.join("\n").slice(0, 4000) : null,
-    })
-    .eq("id", runRow.id);
-
-  return jsonResponse({
-    status,
-    fundsChecked: funds.length,
-    fundsUpdated: updated,
-    fundsFailed: failed,
-    failedFundCodes: failedCodes,
-  });
 });

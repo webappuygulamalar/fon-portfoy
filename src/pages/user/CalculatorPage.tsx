@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { calculatePortfolio } from "../../domain/calculation/engine";
 import { buildCalculationInput, resolveFundSelections } from "../../domain/calculation/buildInput";
-import type { FundAssetClass, PortfolioCalculationResult } from "../../domain/calculation/types";
+import type { PortfolioCalculationResult } from "../../domain/calculation/types";
 import { usePublishedModel } from "../../hooks/usePublishedModel";
 import { useFxRates } from "../../hooks/useFxRates";
+import { useCalculatorSelection } from "../../context/CalculatorSelectionContext";
 import { Disclaimer } from "../../components/ui/Disclaimer";
 import { Banner } from "../../components/ui/Banner";
 import { AllocationEditor } from "../../components/portfolio/AllocationEditor";
@@ -11,19 +12,26 @@ import { CalculationSummary } from "../../components/portfolio/CalculationSummar
 
 export function CalculatorPage() {
   const { loading, error, data } = usePublishedModel();
-  const [selectedProfileId, setSelectedProfileId] = useState<string>("");
-  const [totalAmountInput, setTotalAmountInput] = useState("");
-  const [overrides, setOverrides] = useState<Partial<Record<FundAssetClass, string>>>({});
+  const {
+    totalAmountInput,
+    setTotalAmountInput,
+    selectedProfileId,
+    setSelectedProfileId,
+    overrides,
+    resetOverrides,
+  } = useCalculatorSelection();
   const [result, setResult] = useState<PortfolioCalculationResult | null>(null);
 
   useEffect(() => {
     if (data && !selectedProfileId && data.profiles.length > 0) {
       setSelectedProfileId(data.profiles[0].profileId);
     }
-  }, [data, selectedProfileId]);
+  }, [data, selectedProfileId, setSelectedProfileId]);
 
   const selectedProfile = data?.profiles.find((p) => p.profileId === selectedProfileId) ?? null;
 
+  // resolveFundSelections, AllocationEditor içinde ayrıca çağrılır; burada
+  // yalnızca hangi döviz kurlarına ihtiyaç olduğunu belirlemek için kullanılır.
   const selections = useMemo(() => {
     if (!selectedProfile || !data) return [];
     return resolveFundSelections(selectedProfile, data.fundsById, data.latestPriceByFundId, overrides);
@@ -32,24 +40,11 @@ export function CalculatorPage() {
   const currenciesNeeded = selections.map((s) => s.price?.currency).filter((c): c is string => Boolean(c));
   const fxRatesByCurrency = useFxRates(currenciesNeeded);
 
-  const allFunds = useMemo(() => (data ? Object.values(data.fundsById) : []), [data]);
-
   const parsedTotal = Number(totalAmountInput.replace(/\./g, "").replace(",", "."));
   const isTotalValid = totalAmountInput.trim() !== "" && Number.isFinite(parsedTotal) && parsedTotal > 0;
 
   function handleProfileChange(profileId: string) {
     setSelectedProfileId(profileId);
-    setOverrides({});
-    setResult(null);
-  }
-
-  function handleOverrideChange(assetClass: FundAssetClass, fundId: string | null) {
-    setOverrides((prev) => {
-      const next = { ...prev };
-      if (fundId) next[assetClass] = fundId;
-      else delete next[assetClass];
-      return next;
-    });
     setResult(null);
   }
 
@@ -91,41 +86,47 @@ export function CalculatorPage() {
       <Disclaimer />
 
       <div className="card stack">
-        <div className="field">
-          <label className="field-label" htmlFor="total-amount">
-            Toplam Portföy Tutarı (TL)
-          </label>
-          <input
-            id="total-amount"
-            className="input tabular-nums"
-            inputMode="decimal"
-            placeholder="Örn. 100.000"
-            value={totalAmountInput}
-            onChange={(e) => {
-              setTotalAmountInput(e.target.value);
-              setResult(null);
-            }}
-          />
+        <div className="row" style={{ alignItems: "flex-start" }}>
+          <div className="field" style={{ flex: "1 1 240px", minWidth: 220 }}>
+            <label className="field-label" htmlFor="total-amount">
+              Toplam Portföy Tutarı (TL)
+            </label>
+            <input
+              id="total-amount"
+              className="input tabular-nums"
+              inputMode="decimal"
+              placeholder="Örn. 100.000"
+              value={totalAmountInput}
+              onChange={(e) => {
+                setTotalAmountInput(e.target.value);
+                setResult(null);
+              }}
+            />
+          </div>
+
+          <div className="field" style={{ flex: "1 1 240px", minWidth: 220 }}>
+            <label className="field-label" htmlFor="risk-profile">
+              Risk Profili
+            </label>
+            <select
+              id="risk-profile"
+              className="select"
+              value={selectedProfileId}
+              onChange={(e) => handleProfileChange(e.target.value)}
+            >
+              {data.profiles.map((p) => (
+                <option key={p.profileId} value={p.profileId}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+            {selectedProfile && <p className="page-subtitle">{selectedProfile.description}</p>}
+          </div>
         </div>
 
-        <div className="field">
-          <label className="field-label" htmlFor="risk-profile">
-            Risk Profili
-          </label>
-          <select
-            id="risk-profile"
-            className="select"
-            value={selectedProfileId}
-            onChange={(e) => handleProfileChange(e.target.value)}
-          >
-            {data.profiles.map((p) => (
-              <option key={p.profileId} value={p.profileId}>
-                {p.name}
-              </option>
-            ))}
-          </select>
-          {selectedProfile && <p className="page-subtitle">{selectedProfile.description}</p>}
-        </div>
+        <button className="btn btn-primary btn-block" disabled={!isTotalValid} onClick={handleCalculate}>
+          Portföyü Hesapla
+        </button>
       </div>
 
       {selectedProfile && (
@@ -136,29 +137,15 @@ export function CalculatorPage() {
               profile={selectedProfile}
               fundsById={data.fundsById}
               latestPriceByFundId={data.latestPriceByFundId}
-              allFunds={allFunds}
               overrides={overrides}
-              onOverrideChange={handleOverrideChange}
               onResetOverrides={() => {
-                setOverrides({});
+                resetOverrides();
                 setResult(null);
               }}
             />
           </div>
         </div>
       )}
-
-      <div className="desktop-only">
-        <button className="btn btn-primary" disabled={!isTotalValid} onClick={handleCalculate}>
-          Portföyü Hesapla
-        </button>
-      </div>
-
-      <div className="sticky-action-bar">
-        <button className="btn btn-primary btn-block" disabled={!isTotalValid} onClick={handleCalculate}>
-          Portföyü Hesapla
-        </button>
-      </div>
 
       {result && (
         <div>

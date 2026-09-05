@@ -23,6 +23,7 @@ interface ResolvedPrice {
   fetchedAt: string;
   fundId: string;
   fundCode: string;
+  fundName?: string;
   fxRateUsed?: FxRateUsed;
 }
 
@@ -46,6 +47,7 @@ function resolvePrice(
       fetchedAt: priceInput.fetchedAt,
       fundId: priceInput.fundId,
       fundCode: priceInput.fundCode,
+      fundName: priceInput.fundName,
     };
   }
 
@@ -70,6 +72,7 @@ function resolvePrice(
     fetchedAt: priceInput.fetchedAt,
     fundId: priceInput.fundId,
     fundCode: priceInput.fundCode,
+    fundName: priceInput.fundName,
     fxRateUsed: {
       rate: toDecimal(rate.rateToTry),
       rateDate: rate.rateDate,
@@ -163,6 +166,7 @@ export function calculatePortfolio(
       assetClass: ac,
       fundId: price.fundId,
       fundCode: price.fundCode,
+      fundName: price.fundName,
       percentage,
       targetAmount,
       unitPriceTRY: price.unitPriceTRY,
@@ -189,6 +193,7 @@ export function calculatePortfolio(
     assetClass: MONEY_MARKET,
     fundId: mmPrice.fundId,
     fundCode: mmPrice.fundCode,
+    fundName: mmPrice.fundName,
     percentage: mmPercentage,
     targetAmount: mmTargetAmount,
     unitPriceTRY: mmPrice.unitPriceTRY,

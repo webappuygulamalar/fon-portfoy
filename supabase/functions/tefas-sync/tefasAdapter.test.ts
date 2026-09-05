@@ -1,5 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
-import { fetchLatestFundPrice, parseLatestPriceFromRows, parseTefasDate } from "./tefasAdapter.ts";
+import {
+  extractManagementCompany,
+  fetchAllParticipationFunds,
+  fetchLatestFundPrice,
+  parseLatestPriceFromRows,
+  parseTefasDate,
+  toTitleCaseTR,
+} from "./tefasAdapter.ts";
 
 function jsonResponse(status: number, body: unknown, headers: Record<string, string> = {}) {
   return {
@@ -135,5 +142,137 @@ describe("fetchLatestFundPrice — fonTipi döngüsü (canlı TEFAS'ta doğrulan
     await expect(
       fetchLatestFundPrice("YOKFON", { fetchImpl: fetchImpl as unknown as typeof fetch }),
     ).rejects.toThrow(/TEFAS hatası/);
+  });
+});
+
+describe("toTitleCaseTR", () => {
+  it("TÜMÜ BÜYÜK HARF bir unvanı Türkçe kurallarına göre başlık haline getirir", () => {
+    expect(toTitleCaseTR("ZİRAAT PORTFÖY ALTIN KATILIM BORSA YATIRIM FONU")).toBe(
+      "Ziraat Portföy Altın Katılım Borsa Yatırım Fonu",
+    );
+  });
+
+  it("bilinen kısaltmaları (BIST, TL) büyük harfte tutar", () => {
+    expect(toTitleCaseTR("ZİRAAT PORTFÖY BIST KATILIM 30 ENDEKSİ (TL) FONU")).toBe(
+      "Ziraat Portföy BIST Katılım 30 Endeksi (TL) Fonu",
+    );
+  });
+
+  it("fazla boşlukları tek boşluğa indirger", () => {
+    expect(toTitleCaseTR("ZİRAAT PORTFÖY ALTIN KATILIM  BORSA YATIRIM FONU")).toBe(
+      "Ziraat Portföy Altın Katılım Borsa Yatırım Fonu",
+    );
+  });
+});
+
+describe("extractManagementCompany", () => {
+  it("unvandaki ilk 'PORTFÖY' kelimesine kadarki (dahil) kısmı şirket adı sayar", () => {
+    expect(extractManagementCompany("KUVEYT TÜRK PORTFÖY PARA PİYASASI KATILIM (TL) FONU")).toBe(
+      "Kuveyt Türk Portföy",
+    );
+  });
+
+  it("'PORTFÖY' kelimesi yoksa null döner (uydurma yapmaz)", () => {
+    expect(extractManagementCompany("TMKŞ EKGYO BİRİNCİ KATILIM VARLIK FİNANSMANI FONU")).toBeNull();
+  });
+});
+
+describe("fetchAllParticipationFunds — toplu katılım fonu keşfi", () => {
+  function bulkResponse(rows: Record<string, unknown>[], toplamSayi: number) {
+    return jsonResponse(200, { resultList: rows, toplamSayi, errorMessage: null });
+  }
+
+  it("YAT ve BYF fon tiplerini birleştirir, her kod için en güncel tarihli satırı seçer", async () => {
+    const fetchImpl = vi.fn(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(init.body as string);
+      if (body.fonTipi === "YAT") {
+        return bulkResponse(
+          [
+            { fonKodu: "AAA", fonUnvan: "TEST PORTFÖY PARA PİYASASI KATILIM FONU", tarih: "2026-09-03", fiyat: 1.1 },
+            { fonKodu: "AAA", fonUnvan: "TEST PORTFÖY PARA PİYASASI KATILIM FONU", tarih: "2026-09-04", fiyat: 1.2 },
+          ],
+          2,
+        );
+      }
+      return bulkResponse(
+        [{ fonKodu: "ZKP", fonUnvan: "ZİRAAT PORTFÖY BIST KATILIM 30 ENDEKSİ FONU", tarih: "2026-09-04", fiyat: 7.5 }],
+        1,
+      );
+    });
+
+    const result = await fetchAllParticipationFunds({ fetchImpl: fetchImpl as unknown as typeof fetch });
+
+    expect(result.errors).toEqual([]);
+    const aaa = result.funds.find((f) => f.code === "AAA")!;
+    expect(aaa.price).toBe(1.2);
+    expect(aaa.priceDate).toBe("2026-09-04");
+    expect(aaa.fonTipi).toBe("YAT");
+    expect(result.funds.find((f) => f.code === "ZKP")?.fonTipi).toBe("BYF");
+  });
+
+  it("bir fon tipi tamamen başarısız olsa bile diğerinin sonuçlarını kaybetmez (kısmi başarı)", async () => {
+    const fetchImpl = vi.fn(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(init.body as string);
+      if (body.fonTipi === "BYF") {
+        return jsonResponse(500, {});
+      }
+      return bulkResponse(
+        [{ fonKodu: "OK1", fonUnvan: "TEST PORTFÖY KATILIM FONU", tarih: "2026-09-04", fiyat: 1 }],
+        1,
+      );
+    });
+
+    const result = await fetchAllParticipationFunds({ fetchImpl: fetchImpl as unknown as typeof fetch });
+
+    expect(result.funds.find((f) => f.code === "OK1")).toBeDefined();
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]).toMatch(/fonTipi=BYF/);
+  });
+
+  it("sayfalamayı takip eder ve toplamSayi'ye ulaşınca durur", async () => {
+    const calls: Array<{ fonTipi: string; basSira: number; bitSira: number }> = [];
+    const fetchImpl = vi.fn(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(init.body as string);
+      calls.push({ fonTipi: body.fonTipi, basSira: body.basSira, bitSira: body.bitSira });
+      if (body.fonTipi === "BYF") return bulkResponse([], 0);
+      // YAT: toplamSayi 1500, sayfa başına 1000 -> 2 sayfa beklenir.
+      const isFirstPage = body.basSira === 1;
+      return bulkResponse(
+        [
+          {
+            fonKodu: isFirstPage ? "P1" : "P2",
+            fonUnvan: "TEST PORTFÖY KATILIM FONU",
+            tarih: "2026-09-04",
+            fiyat: 1,
+          },
+        ],
+        1500,
+      );
+    });
+
+    await fetchAllParticipationFunds({ fetchImpl: fetchImpl as unknown as typeof fetch });
+
+    const yatCalls = calls.filter((c) => c.fonTipi === "YAT");
+    expect(yatCalls).toHaveLength(2);
+    expect(yatCalls[0]).toMatchObject({ basSira: 1, bitSira: 1000 });
+    expect(yatCalls[1]).toMatchObject({ basSira: 1001, bitSira: 2000 });
+  });
+
+  it("ayrıştırılamayan tarihli bir satırı sessizce atlar (uydurma yapmaz)", async () => {
+    const fetchImpl = vi.fn(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(init.body as string);
+      if (body.fonTipi === "BYF") return bulkResponse([], 0);
+      return bulkResponse(
+        [
+          { fonKodu: "BAD", fonUnvan: "TEST PORTFÖY KATILIM FONU", tarih: "geçersiz-tarih", fiyat: 1 },
+          { fonKodu: "OK1", fonUnvan: "TEST PORTFÖY KATILIM FONU", tarih: "2026-09-04", fiyat: 1 },
+        ],
+        2,
+      );
+    });
+
+    const result = await fetchAllParticipationFunds({ fetchImpl: fetchImpl as unknown as typeof fetch });
+    expect(result.funds.find((f) => f.code === "BAD")).toBeUndefined();
+    expect(result.funds.find((f) => f.code === "OK1")).toBeDefined();
   });
 });

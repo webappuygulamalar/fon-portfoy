@@ -66,6 +66,7 @@ export function buildCalculationInput(
     fundPrices[sel.assetClass] = {
       fundId: sel.fund.id,
       fundCode: sel.fund.code,
+      fundName: sel.fund.name,
       assetClass: sel.assetClass,
       price: sel.price.price,
       currency: sel.price.currency,
