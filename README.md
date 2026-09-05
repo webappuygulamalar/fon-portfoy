@@ -1,0 +1,124 @@
+# Fon Portföy
+
+Katılım fonlarını tanıtan ve admin tarafından tanımlanan model portföylere göre
+**pay hesaplama** (bilgilendirme amaçlı) yapan bir web uygulaması. Kullanıcı
+uygulaması ve "Fon Portföy Admin" yönetim bölümü aynı kod tabanındadır.
+
+> **Bilgilendirme ve hesaplama amaçlıdır; yatırım tavsiyesi değildir.**
+> Uygulama hiçbir işlem (alım-satım emri, onay, para transferi) yapmaz ve
+> müşteri adı, TC kimlik no, hesap no gibi kişisel veri saklamaz. Girilen
+> portföy tutarı yalnızca tarayıcıda hesaplanır, hiçbir yere kaydedilmez.
+
+## Yerel çalıştırma
+
+```bash
+npm install
+cp .env.example .env   # Supabase URL/anon key ile doldurun
+npm run dev
+```
+
+Admin bölümüne `/#/admin` üzerinden erişilir.
+
+## Test, lint, build
+
+```bash
+npm run lint
+npm test
+npm run build
+```
+
+## Supabase migration ve seed
+
+```bash
+supabase login
+supabase link --project-ref <PROJECT_REF>
+supabase db push          # supabase/migrations/*.sql
+psql "$DATABASE_URL" -f supabase/seed.sql   # veya supabase db execute ile
+```
+
+Şema: `funds`, `fund_prices`, `risk_profiles`, `model_versions` (taslak/yayın
+versiyonlama), `model_profile_allocations`, `model_preferred_funds`,
+`model_deposit_buckets`, `admin_users`, `sync_runs`, `fx_rates`. Tüm tablolarda
+RLS açıktır; herkes yalnızca **yayınlanmış** model ve genel fon verilerini
+okuyabilir, yazma yalnızca `admin_users` içindeki yetkili kullanıcılara açıktır.
+
+## Ortam değişkenleri
+
+`.env.example` dosyasına bakın. Frontend'de yalnızca `VITE_SUPABASE_URL` ve
+`VITE_SUPABASE_ANON_KEY` (publishable/anon anahtar) kullanılır. Service role
+anahtarı **hiçbir zaman** frontend'e veya repoya konmaz; yalnızca Edge
+Function ortam değişkeni ve `scripts/bootstrap-admin.mjs` çalıştırılırken
+kullanılır.
+
+## TEFAS senkronizasyonu
+
+`supabase/functions/tefas-sync` her gün 07:30 (TR, 04:30 UTC) `pg_cron` +
+`pg_net` ile otomatik çalışır. TEFAS erişim bilgisi ve secret, migration
+dosyasına **değil**, Supabase Vault'a yazılır:
+
+```bash
+supabase functions deploy tefas-sync
+supabase secrets set CRON_SECRET=<rastgele-güçlü-değer>
+
+# Vault'a bir defaya mahsus (proje SQL editöründe veya psql ile):
+select vault.create_secret('https://<ref>.functions.supabase.co/tefas-sync', 'tefas_sync_url');
+select vault.create_secret('<CRON_SECRET ile aynı değer>', 'tefas_sync_secret');
+```
+
+Admin panelinde "TEFAS fiyatlarını güncelle" ile manuel de tetiklenebilir.
+TEFAS erişilemezse admin, kaynak/tarih bilgisiyle **manuel fiyat girişi**
+yapabilir (senkronizasyon sayfasında).
+
+## Admin bootstrap
+
+Public kayıt kapalıdır. İlk admin:
+
+```bash
+SUPABASE_URL="https://<ref>.supabase.co" \
+SUPABASE_SERVICE_ROLE_KEY="<service-role-anahtarı>" \
+node scripts/bootstrap-admin.mjs admin@ornek.com
+```
+
+Parola terminalde gizli sorulur, hiçbir yere yazılmaz.
+
+## GitHub Pages dağıtımı
+
+`main` dalına push, `.github/workflows/deploy.yml` ile otomatik build+deploy
+yapar. Repo → Settings → Pages → Source: "GitHub Actions" seçili olmalı.
+Repo değişkenleri (Settings → Secrets and variables → Actions → Variables):
+
+- `VITE_SUPABASE_URL`
+- `VITE_SUPABASE_ANON_KEY`
+
+Vite `base`, router ve PWA `scope`/`start_url` otomatik olarak `/fon-portfoy/`
+kullanır.
+
+## Geçici PWA ikonu
+
+`public/icons/*` altındaki "FP" ikonları **geçici placeholder**'dır. Gerçek
+logo hazır olduğunda aynı dosya adlarıyla (192, 512, maskable 512 ve favicon
+SVG) değiştirmeniz yeterlidir; başka bir yer güncellenmesi gerekmez.
+
+## Bilinen gerçek kısıtlamalar
+
+- TEFAS'ın resmi bir genel API dokümantasyonu yoktur; `tefasAdapter.ts`
+  güncel açık kaynak scraper'lardan doğrulanan endpoint/alan adlarını
+  kullanır. TEFAS yapısını değiştirirse yalnızca bu dosyanın güncellenmesi
+  gerekir.
+- BKY (döviz katılım fonu) için `currency` alanı `TRY` olarak seed edilmiştir
+  (TEFAS fiyatları platform genelinde TL cinsinden ilan edilir), ancak
+  `verification_needed=true` ile işaretlenmiştir — canlı TEFAS verisiyle
+  teyit edilmesi önerilir.
+- Fon getiri yüzdeleri (1 ay/3 ay/YBB/1 yıl) TEFAS'ın hazır bir alanına değil,
+  sistemin kendi topladığı fiyat geçmişine dayanır; senkronizasyon yeni
+  başladığında yeterli geçmiş birikene kadar "—" gösterilir.
+- Katılım fonu kataloğunun otomatik keşfi (yeni fon ekleme) uygulanmamıştır;
+  şu an yalnızca `funds` tablosundaki tanımlı fonların fiyatı senkronize
+  edilir. Admin yeni fonu elle ekleyebilir.
+- Admin panelinde varlık sınıfı başına tercih edilen fon **tüm profiller için
+  ortaktır**; profile özel override veri modelinde desteklenir ama admin
+  arayüzünde bu override'ı düzenleyen bir ekran yoktur (gerekirse SQL ile
+  eklenebilir).
+- RLS ve TEFAS senkronizasyon idempotency testleri canlı bir Supabase projesi
+  gerektirir; bu depoda pure/unit testler vardır, canlı doğrulama dağıtım
+  sonrası ayrıca yapılmalıdır.

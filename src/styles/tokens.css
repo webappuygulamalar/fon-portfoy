@@ -1,0 +1,52 @@
+:root {
+  color-scheme: dark;
+
+  /* Zemin: siyaha yakın, hafif orman yeşili tonlu lacivert */
+  --color-bg: #0a1512;
+  --color-bg-elevated: #0f231d;
+  --color-bg-elevated-2: #153027;
+  --color-bg-input: #0d1f19;
+
+  --color-border: rgba(245, 241, 232, 0.1);
+  --color-border-strong: rgba(245, 241, 232, 0.2);
+
+  /* Kırık beyaz metin */
+  --color-text: #f5f1e8;
+  --color-text-muted: rgba(245, 241, 232, 0.66);
+  --color-text-faint: rgba(245, 241, 232, 0.42);
+
+  /* Mint vurgu (birincil aksiyon) */
+  --color-mint: #2ed9a8;
+  --color-mint-strong: #17b98c;
+  --color-mint-soft: rgba(46, 217, 168, 0.14);
+
+  /* Ölçülü sıcak altın (ikincil vurgu) */
+  --color-gold: #c9a24b;
+  --color-gold-soft: rgba(201, 162, 75, 0.16);
+
+  --color-danger: #e2645c;
+  --color-danger-soft: rgba(226, 100, 92, 0.14);
+  --color-warning: #e0a83d;
+  --color-warning-soft: rgba(224, 168, 61, 0.14);
+
+  --font-sans:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 18px;
+
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px rgba(0, 0, 0, 0.28);
+
+  --sidebar-width: 252px;
+  --mobile-bar-height: 64px;
+  --topbar-height: 56px;
+}
