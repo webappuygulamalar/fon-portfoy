@@ -81,6 +81,14 @@ node scripts/bootstrap-admin.mjs admin@ornek.com
 
 Parola terminalde gizli sorulur, hiçbir yere yazılmaz.
 
+> **Not:** Yeni bir Supabase projesinde e-posta/parola sağlayıcısı
+> (`external_email_enabled`) varsayılan olarak kapalı gelebilir ve bu,
+> `supabase config push` ile `config.toml`'daki `[auth.email]` ayarlarından
+> **farklı** bir anahtardır (config push'un "up to date" demesi bunun açık
+> olduğu anlamına gelmez). Admin girişi "Email logins are disabled" hatası
+> verirse: Dashboard → Authentication → Sign In / Providers → **Email** →
+> Enable Sign in with Email.
+
 ## GitHub Pages dağıtımı
 
 `main` dalına push, `.github/workflows/deploy.yml` ile otomatik build+deploy
