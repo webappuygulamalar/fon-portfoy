@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { ASSET_CLASSES, ASSET_CLASS_LABELS, SHARE_BASED_ASSET_CLASSES, type AssetClass } from "../../lib/constants";
 import { validateAllocations } from "../../domain/calculation/validateAllocations";
+import { isFundEligibleForListing } from "../../domain/calculation/fundListingEligibility";
 import type { FundAssetClass } from "../../domain/calculation/types";
-import { listActiveFunds } from "../../services/fundsRepository";
+import { getLatestPrices, listActiveFunds } from "../../services/fundsRepository";
 import {
   createDraftFromVersion,
   getAllocationsForVersion,
@@ -13,7 +14,7 @@ import {
   setPreferredFund,
   upsertAllocation,
 } from "../../services/modelRepository";
-import type { FundRow, ModelVersionRow, RiskProfileRow } from "../../services/types";
+import type { FundPriceRow, FundRow, ModelVersionRow, RiskProfileRow } from "../../services/types";
 import { Banner } from "../../components/ui/Banner";
 import { Badge } from "../../components/ui/Badge";
 import { formatDateTR } from "../../lib/format";
@@ -25,6 +26,7 @@ export function AdminModelEditorPage() {
   const [versions, setVersions] = useState<ModelVersionRow[]>([]);
   const [profiles, setProfiles] = useState<RiskProfileRow[]>([]);
   const [funds, setFunds] = useState<FundRow[]>([]);
+  const [latestPrices, setLatestPrices] = useState<FundPriceRow[]>([]);
   const [selectedDraftId, setSelectedDraftId] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -46,10 +48,16 @@ export function AdminModelEditorPage() {
     async function init() {
       setLoading(true);
       try {
-        const [v, p, f] = await Promise.all([listModelVersions(), listAllRiskProfiles(), listActiveFunds()]);
+        const [v, p, f, prices] = await Promise.all([
+          listModelVersions(),
+          listAllRiskProfiles(),
+          listActiveFunds(),
+          getLatestPrices(),
+        ]);
         setVersions(v);
         setProfiles(p);
         setFunds(f);
+        setLatestPrices(prices);
         const firstDraft = v.find((x) => x.status === "draft");
         if (firstDraft) setSelectedDraftId(firstDraft.id);
       } catch (err) {
@@ -88,6 +96,28 @@ export function AdminModelEditorPage() {
     }
     loadDraft();
   }, [selectedDraftId]);
+
+  // Kullanıcıya gösterilen fon listeleriyle (bkz. useFundsExplorer /
+  // isFundEligibleForListing) AYNI kuralı uygular — model bu kurala uymayan
+  // bir fonu tercih ediyorsa hesaplama motoru yine de doğru çalışır (bu
+  // sayfa yalnızca admin'i bilgilendirmek için kullanır, veri silmez).
+  const ineligiblePreferredFunds = useMemo(() => {
+    const latestPriceByFundId = new Map(latestPrices.map((p) => [p.fund_id, p]));
+    const result: Partial<Record<FundAssetClass, FundRow>> = {};
+    for (const ac of SHARE_BASED_ASSET_CLASSES as FundAssetClass[]) {
+      const fundId = preferredForm[ac];
+      if (!fundId) continue;
+      const fund = funds.find((f) => f.id === fundId);
+      if (!fund) continue;
+      const eligible = isFundEligibleForListing({
+        riskValue: fund.risk_value,
+        investorCount: latestPriceByFundId.get(fundId)?.investor_count ?? null,
+        fundType: fund.fund_type,
+      });
+      if (!eligible) result[ac] = fund;
+    }
+    return result;
+  }, [funds, latestPrices, preferredForm]);
 
   const validation = useMemo(() => {
     const perProfile = profiles.map((profile) => {
@@ -272,6 +302,16 @@ export function AdminModelEditorPage() {
           <div className="card">
             <p className="section-title">Standart (Tercih Edilen) Fonlar</p>
             <p className="disclaimer">Tüm profillerde kullanılan varsayılan fonlar.</p>
+            {Object.entries(ineligiblePreferredFunds).length > 0 && (
+              <Banner variant="warning">
+                Şu standart fonlar risk değeri eksik veya yatırımcı sayısı 50'nin altında olduğu için
+                artık kullanıcı fon listelerinde görünmüyor (hesaplama etkilenmez, yalnızca fon
+                değiştirme seçim listesinde seçilemezler):{" "}
+                {Object.entries(ineligiblePreferredFunds)
+                  .map(([ac, fund]) => `${ASSET_CLASS_LABELS[ac as FundAssetClass]}: ${fund.code}`)
+                  .join(", ")}
+              </Banner>
+            )}
             <div className="stack-sm" style={{ marginTop: 12 }}>
               {(SHARE_BASED_ASSET_CLASSES as FundAssetClass[]).map((ac) => {
                 const options = funds.filter((f) => f.asset_class === ac && f.is_substitution_eligible);

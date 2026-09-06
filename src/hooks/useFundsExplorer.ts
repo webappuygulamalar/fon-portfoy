@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { getFundReturns, getLatestPrices, listActiveFunds } from "../services/fundsRepository";
+import { isFundEligibleForListing } from "../domain/calculation/fundListingEligibility";
 import type { AssetClass } from "../lib/constants";
 
 export interface FundExplorerRow {
@@ -31,6 +32,15 @@ interface UseFundsExplorerResult {
   rows: FundExplorerRow[];
 }
 
+/**
+ * Kullanıcıya gösterilen fon listelerinin (Fonlar kataloğu — FundsPage,
+ * fon değiştirme seçim listesi — FundSubstitutionPage) TEK veri kaynağı.
+ * `isFundEligibleForListing` ile uygunsuz fonlar burada, kaynakta elenir —
+ * böylece arama/filtre/sıralama/sonuç sayısı gibi her iki sayfada da
+ * ayrı ayrı tekrarlanan mantık otomatik olarak yalnızca uygun fonlar
+ * üzerinde çalışır. Bu filtre yalnızca GÖSTERİM içindir; veritabanı,
+ * senkronizasyon ve hesaplama motoru (bkz. usePublishedModel) etkilenmez.
+ */
 export function useFundsExplorer(): UseFundsExplorerResult {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -50,32 +60,36 @@ export function useFundsExplorer(): UseFundsExplorerResult {
         const priceByFund = Object.fromEntries(prices.map((p) => [p.fund_id, p]));
         const returnsByFund = Object.fromEntries(returns.map((r) => [r.fund_id, r]));
 
+        const explorerRows = funds.map((f) => {
+          const price = priceByFund[f.id];
+          const ret = returnsByFund[f.id];
+          return {
+            id: f.id,
+            code: f.code,
+            name: f.name,
+            managementCompany: f.management_company,
+            assetClass: f.asset_class,
+            catalogCategory: f.catalog_category,
+            fundType: f.fund_type,
+            currency: f.currency,
+            riskValue: f.risk_value,
+            isSubstitutionEligible: f.is_substitution_eligible,
+            price: price ? Number(price.price) : null,
+            priceDate: price ? price.price_date : null,
+            fundSize: price?.fund_size ? Number(price.fund_size) : null,
+            investorCount: price?.investor_count ?? null,
+            return1m: ret?.return_1m_pct ? Number(ret.return_1m_pct) : null,
+            return3m: ret?.return_3m_pct ? Number(ret.return_3m_pct) : null,
+            returnYtd: ret?.return_ytd_pct ? Number(ret.return_ytd_pct) : null,
+            return1y: ret?.return_1y_pct ? Number(ret.return_1y_pct) : null,
+            verificationNeeded: f.verification_needed,
+          };
+        });
+
         setRows(
-          funds.map((f) => {
-            const price = priceByFund[f.id];
-            const ret = returnsByFund[f.id];
-            return {
-              id: f.id,
-              code: f.code,
-              name: f.name,
-              managementCompany: f.management_company,
-              assetClass: f.asset_class,
-              catalogCategory: f.catalog_category,
-              fundType: f.fund_type,
-              currency: f.currency,
-              riskValue: f.risk_value,
-              isSubstitutionEligible: f.is_substitution_eligible,
-              price: price ? Number(price.price) : null,
-              priceDate: price ? price.price_date : null,
-              fundSize: price?.fund_size ? Number(price.fund_size) : null,
-              investorCount: price?.investor_count ?? null,
-              return1m: ret?.return_1m_pct ? Number(ret.return_1m_pct) : null,
-              return3m: ret?.return_3m_pct ? Number(ret.return_3m_pct) : null,
-              returnYtd: ret?.return_ytd_pct ? Number(ret.return_ytd_pct) : null,
-              return1y: ret?.return_1y_pct ? Number(ret.return_1y_pct) : null,
-              verificationNeeded: f.verification_needed,
-            };
-          }),
+          explorerRows.filter((r) =>
+            isFundEligibleForListing({ riskValue: r.riskValue, investorCount: r.investorCount, fundType: r.fundType }),
+          ),
         );
       } catch (err) {
         if (active) setError(err instanceof Error ? err.message : "Bilinmeyen hata oluştu");
