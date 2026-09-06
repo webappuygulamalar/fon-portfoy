@@ -52,9 +52,11 @@ kullanılır.
 
 ## TEFAS senkronizasyonu
 
-`supabase/functions/tefas-sync` her gün 07:30 (TR, 04:30 UTC) `pg_cron` +
-`pg_net` ile otomatik çalışır. TEFAS erişim bilgisi ve secret, migration
-dosyasına **değil**, Supabase Vault'a yazılır:
+`supabase/functions/tefas-sync` her gün 08:30'da (TR, 05:30 UTC) ve 09:45'te
+(TR, 06:45 UTC — tekrar kontrol) `pg_cron` + `pg_net` ile otomatik çalışır
+(iki ayrı görev, aynı `trigger_tefas_sync()` fonksiyonu — bkz.
+`20260906170000_tefas_sync_schedule.sql`). TEFAS erişim bilgisi ve secret,
+migration dosyasına **değil**, Supabase Vault'a yazılır:
 
 ```bash
 supabase functions deploy tefas-sync

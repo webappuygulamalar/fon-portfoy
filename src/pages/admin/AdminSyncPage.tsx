@@ -152,8 +152,8 @@ export function AdminSyncPage() {
       <div>
         <h1 className="page-title">TEFAS Senkronizasyonu</h1>
         <p className="page-subtitle">
-          Fiyatlar her sabah 07:30 (TR) otomatik güncellenir. Gerekirse manuel tetikleyebilir veya
-          fiyatı elle girebilirsiniz.
+          Fiyatlar her sabah 08:30'da güncellenir, 09:45'te tekrar kontrol edilir. Gerekirse manuel
+          tetikleyebilir veya fiyatı elle girebilirsiniz.
         </p>
       </div>
 
