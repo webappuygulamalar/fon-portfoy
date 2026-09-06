@@ -14,6 +14,16 @@ export default defineConfig(({ command }) => {
       react(),
       VitePWA({
         registerType: "autoUpdate",
+        // Varsayılan enjekte edilen script yalnızca service worker'ı
+        // kaydeder, güncellemeleri AKTİF OLARAK denetlemez/uygulamaz —
+        // bu yüzden bir dağıtımdan sonra kullanıcılar sekmeyi kapatıp
+        // yeniden açana kadar (bazen daha da uzun) ESKİ, önbelleğe
+        // alınmış sürümü görmeye devam edebilir. Bunun yerine main.tsx'te
+        // `virtual:pwa-register`'ın `registerSW({ immediate: true })`'ı
+        // kullanılıyor; bu, registerType: "autoUpdate" ile birlikte yeni
+        // bir sürüm bulunduğunda service worker'ı hemen etkinleştirip
+        // sayfayı otomatik yeniler.
+        injectRegister: false,
         includeAssets: ["icons/icon-mask.svg"],
         manifest: {
           name: "Fon Portföy",
@@ -40,6 +50,10 @@ export default defineConfig(({ command }) => {
         },
         workbox: {
           globPatterns: ["**/*.{js,css,html,svg,png,ico,webmanifest}"],
+          // Yeni service worker'ın etkin olan(lar)ı beklemeden hemen devreye
+          // girmesini sağlar (registerSW'nin auto-reload'ıyla birlikte).
+          skipWaiting: true,
+          clientsClaim: true,
         },
         devOptions: { enabled: false },
       }),
