@@ -1,22 +1,22 @@
 import { useMemo, useState } from "react";
 import { useFundsExplorer, type FundExplorerRow } from "../../hooks/useFundsExplorer";
-import { ASSET_CLASS_LABELS, type AssetClass } from "../../lib/constants";
-import { formatCurrencyCode, formatDateTR, formatNumber, formatSignedPercent } from "../../lib/format";
+import {
+  DEFAULT_FUND_SORT_KEY,
+  FUND_SORT_LABELS,
+  sortCatalogCategoriesForFilter,
+  sortFundRows,
+  type FundSortKey,
+} from "../../lib/fundCatalog";
+import {
+  formatCurrencyCode,
+  formatDateTR,
+  formatFundSizeShort,
+  formatNumber,
+  formatSignedPercent,
+} from "../../lib/format";
 import { Banner } from "../../components/ui/Banner";
 import { Badge } from "../../components/ui/Badge";
 import { Disclaimer } from "../../components/ui/Disclaimer";
-
-type SortKey = "code" | "fundSize" | "return1m" | "return3m" | "returnYtd" | "return1y";
-type AssetClassFilter = AssetClass | "ALL" | "NONE";
-
-const SORT_LABELS: Record<SortKey, string> = {
-  code: "Koda göre (A-Z)",
-  fundSize: "Büyüklüğe göre (çoktan aza)",
-  return1m: "1 ay getiriye göre",
-  return3m: "3 ay getiriye göre",
-  returnYtd: "Yılbaşından beri getiriye göre",
-  return1y: "1 yıl getiriye göre",
-};
 
 function cell(value: number | null, suffix = ""): string {
   return value === null ? "—" : `${formatNumber(value)}${suffix}`;
@@ -29,19 +29,16 @@ function returnCell(value: number | null): string {
 export function FundsPage() {
   const { loading, error, rows } = useFundsExplorer();
   const [search, setSearch] = useState("");
-  const [assetClassFilter, setAssetClassFilter] = useState<AssetClassFilter>("ALL");
   const [categoryFilter, setCategoryFilter] = useState<string>("ALL");
   const [companyFilter, setCompanyFilter] = useState<string>("ALL");
   const [fundTypeFilter, setFundTypeFilter] = useState<string>("ALL");
   const [currencyFilter, setCurrencyFilter] = useState<string>("ALL");
   const [riskFilter, setRiskFilter] = useState<string>("ALL");
-  const [sortKey, setSortKey] = useState<SortKey>("code");
+  const [sortKey, setSortKey] = useState<FundSortKey>(DEFAULT_FUND_SORT_KEY);
 
   const currencies = useMemo(() => [...new Set(rows.map((r) => r.currency))].sort(), [rows]);
   const categories = useMemo(
-    () => [...new Set(rows.map((r) => r.catalogCategory).filter((c): c is string => Boolean(c)))].sort(
-      (a, b) => a.localeCompare(b, "tr-TR"),
-    ),
+    () => sortCatalogCategoriesForFilter(rows.map((r) => r.catalogCategory).filter((c): c is string => Boolean(c))),
     [rows],
   );
   const companies = useMemo(
@@ -58,40 +55,22 @@ export function FundsPage() {
 
   const filtered = useMemo(() => {
     const term = search.trim().toLocaleLowerCase("tr-TR");
-    let result = rows.filter((r) => {
+    const result = rows.filter((r) => {
       const matchesTerm =
         term === "" ||
         r.code.toLocaleLowerCase("tr-TR").includes(term) ||
         r.name.toLocaleLowerCase("tr-TR").includes(term) ||
         (r.managementCompany?.toLocaleLowerCase("tr-TR").includes(term) ?? false);
-      const matchesAssetClass =
-        assetClassFilter === "ALL" ||
-        (assetClassFilter === "NONE" ? r.assetClass === null : r.assetClass === assetClassFilter);
       const matchesCategory = categoryFilter === "ALL" || r.catalogCategory === categoryFilter;
       const matchesCompany = companyFilter === "ALL" || r.managementCompany === companyFilter;
       const matchesFundType = fundTypeFilter === "ALL" || r.fundType === fundTypeFilter;
       const matchesCurrency = currencyFilter === "ALL" || r.currency === currencyFilter;
       const matchesRisk = riskFilter === "ALL" || String(r.riskValue ?? "") === riskFilter;
-      return (
-        matchesTerm &&
-        matchesAssetClass &&
-        matchesCategory &&
-        matchesCompany &&
-        matchesFundType &&
-        matchesCurrency &&
-        matchesRisk
-      );
+      return matchesTerm && matchesCategory && matchesCompany && matchesFundType && matchesCurrency && matchesRisk;
     });
 
-    result = [...result].sort((a, b) => {
-      if (sortKey === "code") return a.code.localeCompare(b.code, "tr-TR");
-      const av = a[sortKey] ?? -Infinity;
-      const bv = b[sortKey] ?? -Infinity;
-      return bv - av;
-    });
-
-    return result;
-  }, [rows, search, assetClassFilter, categoryFilter, companyFilter, fundTypeFilter, currencyFilter, riskFilter, sortKey]);
+    return sortFundRows(result, sortKey);
+  }, [rows, search, categoryFilter, companyFilter, fundTypeFilter, currencyFilter, riskFilter, sortKey]);
 
   return (
     <div className="stack">
@@ -110,20 +89,6 @@ export function FundsPage() {
           onChange={(e) => setSearch(e.target.value)}
         />
         <div className="row">
-          <select
-            className="select"
-            style={{ width: "auto", flex: "1 1 180px" }}
-            value={assetClassFilter}
-            onChange={(e) => setAssetClassFilter(e.target.value as AssetClassFilter)}
-          >
-            <option value="ALL">Tüm varlık sınıfları</option>
-            {Object.entries(ASSET_CLASS_LABELS).map(([value, label]) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            ))}
-            <option value="NONE">Model dışı</option>
-          </select>
           <select
             className="select"
             style={{ width: "auto", flex: "1 1 200px" }}
@@ -193,11 +158,11 @@ export function FundsPage() {
           </select>
           <select
             className="select"
-            style={{ width: "auto", flex: "1 1 200px" }}
+            style={{ width: "auto", flex: "1 1 220px" }}
             value={sortKey}
-            onChange={(e) => setSortKey(e.target.value as SortKey)}
+            onChange={(e) => setSortKey(e.target.value as FundSortKey)}
           >
-            {Object.entries(SORT_LABELS).map(([value, label]) => (
+            {Object.entries(FUND_SORT_LABELS).map(([value, label]) => (
               <option key={value} value={value}>
                 {label}
               </option>
@@ -262,10 +227,18 @@ export function FundsPage() {
             </table>
           </div>
 
-          <div className="mobile-only stack-sm">
-            {filtered.map((f) => (
-              <FundCard key={f.id} fund={f} />
-            ))}
+          <div className="mobile-only fund-compact" role="table" aria-label="Fonlar">
+            <div className="fund-compact-head" role="row">
+              <span role="columnheader">Fon</span>
+              <span role="columnheader">1 Ay</span>
+              <span role="columnheader">3 Ay</span>
+              <span role="columnheader">Büyüklük</span>
+            </div>
+            <div className="fund-compact-body">
+              {filtered.map((f) => (
+                <FundCompactRow key={f.id} fund={f} />
+              ))}
+            </div>
           </div>
         </>
       )}
@@ -273,61 +246,26 @@ export function FundsPage() {
   );
 }
 
-function FundCard({ fund }: { fund: FundExplorerRow }) {
-  const [expanded, setExpanded] = useState(false);
+function FundCompactRow({ fund }: { fund: FundExplorerRow }) {
   return (
-    <div className="record-card">
-      <button
-        className="row-between"
-        style={{ background: "none", border: "none", width: "100%", cursor: "pointer", padding: 0 }}
-        onClick={() => setExpanded((v) => !v)}
-      >
-        <div style={{ textAlign: "left" }}>
-          <strong>{fund.code}</strong>
-          <p className="disclaimer">{fund.name}</p>
+    <div className="fund-compact-row" role="row">
+      <div className="fund-compact-name" role="cell">
+        <div className="fund-compact-code-row">
+          <span className="fund-compact-code">{fund.code}</span>
+          {fund.verificationNeeded && <Badge variant="gold">doğrulama gerekli</Badge>}
         </div>
-        <Badge>{fund.catalogCategory ?? "Model dışı"}</Badge>
-      </button>
-
-      {expanded && (
-        <div className="stack-sm" style={{ marginTop: 10 }}>
-          <div className="kv-row">
-            <span className="k">Para Birimi</span>
-            <span>{formatCurrencyCode(fund.currency)}</span>
-          </div>
-          <div className="kv-row">
-            <span className="k">Risk Değeri</span>
-            <span className="tabular-nums">{fund.riskValue ?? "—"}</span>
-          </div>
-          <div className="kv-row">
-            <span className="k">Son Fiyat</span>
-            <span className="tabular-nums">
-              {cell(fund.price)} {fund.priceDate ? `(${formatDateTR(fund.priceDate)})` : ""}
-            </span>
-          </div>
-          <div className="kv-row">
-            <span className="k">Fon Büyüklüğü</span>
-            <span className="tabular-nums">{cell(fund.fundSize)}</span>
-          </div>
-          <div className="kv-row">
-            <span className="k">Yatırımcı Sayısı</span>
-            <span className="tabular-nums">{cell(fund.investorCount)}</span>
-          </div>
-          <div className="kv-row">
-            <span className="k">1 Ay / 3 Ay Getiri</span>
-            <span className="tabular-nums">
-              {returnCell(fund.return1m)} / {returnCell(fund.return3m)}
-            </span>
-          </div>
-          <div className="kv-row">
-            <span className="k">YBB / 1 Yıl Getiri</span>
-            <span className="tabular-nums">
-              {returnCell(fund.returnYtd)} / {returnCell(fund.return1y)}
-            </span>
-          </div>
-          {fund.verificationNeeded && <Badge variant="gold">Doğrulama gerekli</Badge>}
-        </div>
-      )}
+        <div className="fund-compact-title">{fund.name}</div>
+        <div className="fund-compact-category">{fund.catalogCategory ?? "Model dışı"}</div>
+      </div>
+      <div className="fund-compact-num" role="cell">
+        {returnCell(fund.return1m)}
+      </div>
+      <div className="fund-compact-num" role="cell">
+        {returnCell(fund.return3m)}
+      </div>
+      <div className="fund-compact-num fund-compact-size" role="cell">
+        {formatFundSizeShort(fund.fundSize)}
+      </div>
     </div>
   );
 }

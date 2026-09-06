@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatCurrencyCode, formatNumber, formatSignedPercent, formatTRY } from "./format";
+import { formatCurrencyCode, formatFundSizeShort, formatNumber, formatSignedPercent, formatTRY } from "./format";
 
 describe("formatTRY", () => {
   it("küsüratı tam sıfır olan tutarlarda ,00 göstermez", () => {
@@ -59,5 +59,23 @@ describe("formatCurrencyCode — veritabanı kodu -> kullanıcı gösterimi", ()
   it("USD/EUR'u olduğu gibi bırakır", () => {
     expect(formatCurrencyCode("USD")).toBe("USD");
     expect(formatCurrencyCode("EUR")).toBe("EUR");
+  });
+});
+
+describe("formatFundSizeShort — mobilde fon büyüklüğünün milyon TL kısaltması", () => {
+  it("ham TL tutarını milyon TL cinsinden bir ondalıkla gösterir", () => {
+    expect(formatFundSizeShort(343_400_000)).toBe("343,4 mio ₺");
+  });
+
+  it("milyar mertebesindeki büyüklüklerde de Türkçe binlik ayırıcı kullanır", () => {
+    expect(formatFundSizeShort(12_345_678_900)).toBe("12.345,7 mio ₺");
+  });
+
+  it("veri yoksa (null) tahmini değer üretmez, — gösterir", () => {
+    expect(formatFundSizeShort(null)).toBe("—");
+  });
+
+  it("küçük fon büyüklüklerinde de mio birimini korur", () => {
+    expect(formatFundSizeShort(1_200_000)).toBe("1,2 mio ₺");
   });
 });

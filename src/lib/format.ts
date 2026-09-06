@@ -19,6 +19,11 @@ const numberFormatter = new Intl.NumberFormat("tr-TR", {
   maximumFractionDigits: 2,
 });
 
+const millionFormatter = new Intl.NumberFormat("tr-TR", {
+  minimumFractionDigits: 1,
+  maximumFractionDigits: 1,
+});
+
 const dateFormatter = new Intl.DateTimeFormat("tr-TR", {
   day: "2-digit",
   month: "2-digit",
@@ -73,4 +78,14 @@ export function formatDateTR(isoDate: string | null | undefined): string {
  */
 export function formatCurrencyCode(currency: string): string {
   return currency === "TRY" ? "TL" : currency;
+}
+
+/**
+ * Fon büyüklüğünü (ham TL tutarı) mobil dar alana sığacak şekilde milyon
+ * TL cinsinden kısaltır (ör. "343,4 mio ₺"). Veri yoksa (null) "—"
+ * döner — sıfır veya tahmini bir değer ÜRETMEZ.
+ */
+export function formatFundSizeShort(value: number | null): string {
+  if (value === null) return "—";
+  return `${millionFormatter.format(value / 1_000_000)} mio ₺`;
 }
