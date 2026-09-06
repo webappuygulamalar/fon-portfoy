@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classifyFund, classifyFundTitle, detectCurrencyFromTitle } from "./classifyFund.ts";
+import { classifyFund, classifyFundTitle, detectCurrencyFromTitle, shouldSkipReferenceCatalogRisk } from "./classifyFund.ts";
 
 describe("classifyFundTitle — isim tabanlı sezgisel kurallar", () => {
   it("Para piyasası katılım fonunu MONEY_MARKET olarak sınıflandırır", () => {
@@ -76,6 +76,25 @@ describe("classifyFund — referans katalog önceliği", () => {
     const result = classifyFund("YENI99", "TEST PORTFÖY ALTIN KATILIM FONU");
     expect(result.riskValue).toBeNull();
     expect(result.riskSource).toBeNull();
+  });
+});
+
+describe("shouldSkipReferenceCatalogRisk — KAP kaynağını referans katalogla ezmeyi önleme", () => {
+  it("mevcut risk_source yoksa (null) referans katalog uygulanır (atlanmaz)", () => {
+    expect(shouldSkipReferenceCatalogRisk(null)).toBe(false);
+  });
+
+  it("mevcut risk_source zaten referans katalogdansa atlanmaz (kendi kendini tazeleme sorun değil)", () => {
+    expect(shouldSkipReferenceCatalogRisk("reference_catalog_2026-09-04")).toBe(false);
+  });
+
+  it("mevcut risk_source KAP kaynaklıysa (kap_currency_group_usd) ATLANIR — canlıda BKY ile doğrulanan gerçek regresyonu önler", () => {
+    expect(shouldSkipReferenceCatalogRisk("kap_currency_group_usd")).toBe(true);
+  });
+
+  it("KAP kaynağının diğer varyantlarında (kap_single_value, kap_top_level_risk_value) da atlanır", () => {
+    expect(shouldSkipReferenceCatalogRisk("kap_single_value")).toBe(true);
+    expect(shouldSkipReferenceCatalogRisk("kap_top_level_risk_value")).toBe(true);
   });
 });
 

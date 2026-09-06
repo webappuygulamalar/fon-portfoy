@@ -139,3 +139,21 @@ export function classifyFund(code: string, fonUnvan: string): FundClassification
   }
   return classifyFundTitle(fonUnvan);
 }
+
+/**
+ * Bir fonun risk_source'u zaten KAP kaynaklıysa (bkz. kap-risk-sync,
+ * 20260906160000_kap_risk_metadata.sql) true döner — çağıran taraf bu
+ * durumda risk_value/risk_source/risk_updated_at'i upsert payload'ına HİÇ
+ * dahil ETMEMELİDİR.
+ *
+ * Gerekçe: KAP kaynağı fon koduna özgü, kurucu unvanı çapraz kontrolüyle
+ * doğrulanmış ve (döviz fonlarında) para birimine duyarlı seçilmiş bir
+ * değerdir — statik `referenceCatalog.ts` anlık görüntüsünden (tek, grup/
+ * para birimi ayrımı olmayan bir sayı) DAHA GÜVENİLİRDİR. Bu kontrol
+ * olmadan, günlük/iki-günlük tefas-sync her çalıştığında classifyFund()
+ * referans katalogdaki değeri yeniden uygulardı ve KAP'ın daha doğru
+ * değerini SESSİZCE SİLERDİ (canlıda doğrulanan gerçek bir regresyon).
+ */
+export function shouldSkipReferenceCatalogRisk(existingRiskSource: string | null): boolean {
+  return typeof existingRiskSource === "string" && existingRiskSource.startsWith("kap");
+}

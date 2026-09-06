@@ -16,7 +16,7 @@
 // çalıştırma yeni satır oluşturmaz). Listeden geçici olarak kaybolan bir
 // fonun geçmiş fiyat kaydı asla silinmez; sadece o gün için güncellenmez.
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { classifyFund, type FundClassification } from "./classifyFund.ts";
+import { classifyFund, shouldSkipReferenceCatalogRisk, type FundClassification } from "./classifyFund.ts";
 import { fetchAllParticipationFunds } from "./tefasAdapter.ts";
 import { fetchTcmbRates } from "./fxRateAdapter.ts";
 import { CORS_HEADERS, jsonResponse } from "../_shared/jsonResponse.ts";
@@ -141,6 +141,36 @@ Deno.serve(async (req: Request) => {
       classificationByCode.set(f.code, classifyFund(f.code, f.rawTitle));
     }
 
+    // Kaynak önceliği: KAP (kap-risk-sync, bkz. 20260906160000_kap_risk_metadata.sql)
+    // referans katalogdan DAHA GÜVENİLİRDİR (fon koduna ÖZGÜ, KAP'ın resmi
+    // sayfasından, kurucu unvanı çapraz kontrolüyle doğrulanmıştır). Bu
+    // günlük/iki-günlük senkronizasyon, statik referans kataloğu (2026-09-04
+    // anlık görüntüsü) her çalıştığında yeniden uyguluyordu — bu, code'u HEM
+    // referans katalogda HEM KAP'ta bulunan bir fonun risk_source'unu her
+    // senkronizasyonda sessizce 'reference_catalog_2026-09-04'e GERİ
+    // DÜŞÜRÜYORDU (canlıda doğrulanan gerçek bir regresyon: KAP'ın para
+    // birimine duyarlı, daha doğru değeri siliniyordu). bkz.
+    // shouldSkipReferenceCatalogRisk (classifyFund.ts) — önceden zaten
+    // KAP'tan gelmiş bir risk_source varsa, bu fon için risk sütunları
+    // upsert payload'ına HİÇ dahil edilmez (mevcut "risk alanlı"/"risk
+    // alansız" ayrımıyla aynı, kanıtlanmış desen — sütun payload'da yoksa
+    // ON CONFLICT DO UPDATE ona dokunmaz).
+    const kapSourcedCodes = new Set<string>();
+    const allCodes = [...classificationByCode.keys()];
+    for (let i = 0; i < allCodes.length; i += UPSERT_BATCH_SIZE) {
+      const batch = allCodes.slice(i, i + UPSERT_BATCH_SIZE);
+      const { data, error } = await admin.from("funds").select("code, risk_source").in("code", batch);
+      if (error) {
+        errors.push(`mevcut risk_source okunamadı (${i}-${i + batch.length}): ${error.message}`);
+        continue;
+      }
+      for (const row of data ?? []) {
+        if (shouldSkipReferenceCatalogRisk(row.risk_source as string | null)) {
+          kapSourcedCodes.add(row.code as string);
+        }
+      }
+    }
+
     const nowIso = new Date().toISOString();
     const fundRowsWithRisk: (FundUpsertRowBase & RiskFields)[] = [];
     const fundRowsWithoutRisk: FundUpsertRowBase[] = [];
@@ -163,7 +193,7 @@ Deno.serve(async (req: Request) => {
         catalog_category: classification.catalogCategory,
         is_substitution_eligible: classification.modelAssetClass !== null && !classification.needsVerification,
       };
-      if (classification.riskValue !== null && classification.riskSource !== null) {
+      if (classification.riskValue !== null && classification.riskSource !== null && !kapSourcedCodes.has(f.code)) {
         fundRowsWithRisk.push({
           ...base,
           risk_value: classification.riskValue,
