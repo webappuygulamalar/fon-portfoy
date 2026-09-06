@@ -29,12 +29,6 @@ export function UserLayout() {
             ))}
           </ul>
         </nav>
-        <div style={{ marginTop: "auto" }}>
-          <NavLink to="/admin" className="nav-link">
-            <span aria-hidden="true">🔒</span>
-            Yönetim
-          </NavLink>
-        </div>
       </aside>
 
       <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
