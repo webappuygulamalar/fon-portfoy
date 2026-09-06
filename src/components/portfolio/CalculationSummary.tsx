@@ -152,7 +152,7 @@ function FundRowDesktop({ line }: { line: FundLineResult }) {
       <td>
         <PriceCell line={line} />
       </td>
-      <td className="tabular-nums">{line.shareCount}</td>
+      <td className="tabular-nums">{formatNumber(line.shareCount)}</td>
       <td className="tabular-nums">{formatTRY(line.actualAmount)}</td>
     </tr>
   );
@@ -181,7 +181,7 @@ function FundCardMobile({ line }: { line: FundLineResult }) {
         </div>
         <div className="kv-row">
           <span className="k">Pay adedi</span>
-          <span className="tabular-nums">{line.shareCount}</span>
+          <span className="tabular-nums">{formatNumber(line.shareCount)}</span>
         </div>
         <div className="kv-row">
           <span className="k">Hesaplanan tutar</span>

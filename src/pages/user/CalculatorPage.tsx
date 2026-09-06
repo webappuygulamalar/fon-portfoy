@@ -5,6 +5,8 @@ import type { PortfolioCalculationResult } from "../../domain/calculation/types"
 import { usePublishedModel } from "../../hooks/usePublishedModel";
 import { useFxRates } from "../../hooks/useFxRates";
 import { useCalculatorSelection } from "../../context/CalculatorSelectionContext";
+import { parseAmountValue } from "../../lib/amountInput";
+import { AmountInput } from "../../components/ui/AmountInput";
 import { Disclaimer } from "../../components/ui/Disclaimer";
 import { Banner } from "../../components/ui/Banner";
 import { AllocationEditor } from "../../components/portfolio/AllocationEditor";
@@ -40,8 +42,8 @@ export function CalculatorPage() {
   const currenciesNeeded = selections.map((s) => s.price?.currency).filter((c): c is string => Boolean(c));
   const fxRatesByCurrency = useFxRates(currenciesNeeded);
 
-  const parsedTotal = Number(totalAmountInput.replace(/\./g, "").replace(",", "."));
-  const isTotalValid = totalAmountInput.trim() !== "" && Number.isFinite(parsedTotal) && parsedTotal > 0;
+  const parsedTotal = parseAmountValue(totalAmountInput);
+  const isTotalValid = Number.isFinite(parsedTotal) && parsedTotal > 0;
 
   function handleProfileChange(profileId: string) {
     setSelectedProfileId(profileId);
@@ -91,14 +93,13 @@ export function CalculatorPage() {
             <label className="field-label" htmlFor="total-amount">
               Toplam Portföy Tutarı (TL)
             </label>
-            <input
+            <AmountInput
               id="total-amount"
               className="input tabular-nums"
-              inputMode="decimal"
               placeholder="Örn. 100.000"
               value={totalAmountInput}
-              onChange={(e) => {
-                setTotalAmountInput(e.target.value);
+              onChange={(raw) => {
+                setTotalAmountInput(raw);
                 setResult(null);
               }}
             />

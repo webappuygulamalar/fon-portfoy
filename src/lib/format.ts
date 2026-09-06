@@ -1,6 +1,13 @@
 import { Decimal, toDecimal } from "./decimal";
 
-const currencyFormatter = new Intl.NumberFormat("tr-TR", {
+const currencyFormatterWhole = new Intl.NumberFormat("tr-TR", {
+  style: "currency",
+  currency: "TRY",
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 0,
+});
+
+const currencyFormatterFraction = new Intl.NumberFormat("tr-TR", {
   style: "currency",
   currency: "TRY",
   minimumFractionDigits: 2,
@@ -18,8 +25,17 @@ const dateFormatter = new Intl.DateTimeFormat("tr-TR", {
   year: "numeric",
 });
 
+/**
+ * TL tutarını Türkçe biçimde gösterir. Küsürat tam olarak sıfırsa (ör.
+ * 5.100.000,00) ",00" HİÇ gösterilmez ("₺5.100.000"); gerçek kuruş varsa
+ * iki basamak gösterilir ("₺179.846,63"). Yalnızca gösterim amaçlıdır —
+ * `toNumber()` çevrimi burada biter, hesaplamalara geri beslenmez.
+ */
 export function formatTRY(value: Decimal.Value): string {
-  return currencyFormatter.format(toDecimal(value).toNumber());
+  const decimal = toDecimal(value);
+  const isWhole = decimal.toDecimalPlaces(2).mod(1).isZero();
+  const formatter = isWhole ? currencyFormatterWhole : currencyFormatterFraction;
+  return formatter.format(decimal.toNumber());
 }
 
 export function formatNumber(value: Decimal.Value): string {
