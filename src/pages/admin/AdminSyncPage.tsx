@@ -45,6 +45,11 @@ export function AdminSyncPage() {
       await reload();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Senkronizasyon tetiklenemedi");
+      // İstek tarayıcıda başarısız görünse bile sunucu tarafında bir
+      // sync_runs kaydı zaten oluşmuş olabilir (ör. yanıt dönerken bağlantı
+      // kesildi). Çalışma geçmişini yine de tazeleyerek yanlış/eksik bir
+      // izlenim bırakmayı önlüyoruz.
+      await reload().catch(() => {});
     } finally {
       setSyncing(false);
     }

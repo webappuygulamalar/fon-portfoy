@@ -18,7 +18,7 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { classifyFund } from "./classifyFund.ts";
 import { fetchAllParticipationFunds } from "./tefasAdapter.ts";
-import { jsonResponse } from "../_shared/jsonResponse.ts";
+import { CORS_HEADERS, jsonResponse } from "../_shared/jsonResponse.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -44,6 +44,13 @@ interface FundUpsertRow {
 }
 
 Deno.serve(async (req: Request) => {
+  // Tarayıcı CORS preflight'ı — auth kontrolünden ÖNCE, koşulsuz yanıtlanır.
+  // Bkz. _shared/jsonResponse.ts üstündeki not: bu olmadan admin panelinden
+  // yapılan HER manuel tetikleme, sunucuda hiçbir kod çalışmadan
+  // "Failed to send a request" ile başarısız olur.
+  if (req.method === "OPTIONS") {
+    return new Response(null, { status: 204, headers: CORS_HEADERS });
+  }
   if (req.method !== "POST") {
     return jsonResponse({ error: "Method Not Allowed" }, 405);
   }
