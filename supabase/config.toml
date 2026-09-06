@@ -408,6 +408,13 @@ verify_jwt = false
 enabled = true
 verify_jwt = false
 
+# kap-risk-sync da aynı nedenle (yalnızca admin JWT ile manuel tetiklenir,
+# ama aynı ikili authenticateSyncRequest desenini paylaşır) platform JWT
+# doğrulamasını kapatır.
+[functions.kap-risk-sync]
+enabled = true
+verify_jwt = false
+
 [analytics]
 enabled = true
 port = 54327

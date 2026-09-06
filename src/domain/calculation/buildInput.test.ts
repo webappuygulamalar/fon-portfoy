@@ -48,6 +48,11 @@ function mkFund(id: string, code: string, assetClass: FundRow["asset_class"], cu
     currency_source: "tefas_default_try",
     risk_source_url: null,
     risk_verified: false,
+    kap_fund_id: null,
+    kap_checked_at: null,
+    kap_lookup_status: null,
+    risk_verification_needed: false,
+    risk_verification_note: null,
   };
 }
 

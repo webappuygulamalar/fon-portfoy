@@ -44,6 +44,15 @@ export interface FundRow {
   risk_source_url: string | null;
   /** true ise risk_value bilinen bir kaynaktan doğrulanmıştır (tahmin değildir). */
   risk_verified: boolean;
+  /** KAP'ın dahili fon OID'si. Kod+kurucu eşleşmeden yazılmaz. */
+  kap_fund_id: string | null;
+  /** Son KAP arama/eşleştirme denemesinin zamanı. NULL = hiç denenmedi. */
+  kap_checked_at: string | null;
+  /** matched | ambiguous_search_match | not_found | error | null (hiç denenmedi). */
+  kap_lookup_status: string | null;
+  /** true ise KAP'ta fon bulundu ama risk verisi çelişkili/belirsiz — admin incelemesi gerekir. */
+  risk_verification_needed: boolean;
+  risk_verification_note: string | null;
 }
 
 export interface FundPriceRow {
@@ -149,6 +158,23 @@ export interface PriceBackfillRunRow {
   window_end: string;
   rows_upserted: number;
   funds_touched: number;
+  error_summary: string | null;
+}
+
+export interface RiskSyncRunRow {
+  id: string;
+  started_at: string;
+  finished_at: string | null;
+  status: "running" | "success" | "partial" | "failed";
+  trigger_type: "cron" | "manual";
+  triggered_by_admin_id: string | null;
+  funds_checked: number;
+  funds_matched: number;
+  funds_risk_obtained: number;
+  funds_ambiguous: number;
+  funds_not_found: number;
+  funds_error: number;
+  failed_fund_codes: string[];
   error_summary: string | null;
 }
 

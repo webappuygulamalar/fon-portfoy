@@ -3,11 +3,20 @@ import { listActiveFunds, insertManualPrice } from "../../services/fundsReposito
 import {
   getPriceBackfillCheckpoint,
   listPriceBackfillRuns,
+  listRiskSyncRuns,
   listSyncRuns,
+  triggerKapRiskFullRevalidation,
+  triggerKapRiskSyncStep,
   triggerManualTefasSync,
   triggerPriceBackfillStep,
 } from "../../services/syncRepository";
-import type { FundRow, PriceBackfillCheckpointRow, PriceBackfillRunRow, SyncRunRow } from "../../services/types";
+import type {
+  FundRow,
+  PriceBackfillCheckpointRow,
+  PriceBackfillRunRow,
+  RiskSyncRunRow,
+  SyncRunRow,
+} from "../../services/types";
 import { formatCurrencyCode, formatDateTR } from "../../lib/format";
 import { ASSET_CLASS_LABELS } from "../../lib/constants";
 import { Banner } from "../../components/ui/Banner";
@@ -31,18 +40,23 @@ export function AdminSyncPage() {
   const [syncResult, setSyncResult] = useState<string | null>(null);
   const [backfilling, setBackfilling] = useState(false);
   const [backfillResult, setBackfillResult] = useState<string | null>(null);
+  const [riskSyncRuns, setRiskSyncRuns] = useState<RiskSyncRunRow[]>([]);
+  const [riskSyncing, setRiskSyncing] = useState(false);
+  const [riskSyncResult, setRiskSyncResult] = useState<string | null>(null);
 
   async function reload() {
-    const [r, f, cp, br] = await Promise.all([
+    const [r, f, cp, br, rsr] = await Promise.all([
       listSyncRuns(30),
       listActiveFunds(),
       getPriceBackfillCheckpoint(),
       listPriceBackfillRuns(10),
+      listRiskSyncRuns(10),
     ]);
     setRuns(r);
     setFunds(f);
     setCheckpoint(cp);
     setBackfillRuns(br);
+    setRiskSyncRuns(rsr);
   }
 
   async function handleBackfillStep() {
@@ -70,6 +84,43 @@ export function AdminSyncPage() {
       .catch((err) => setError(err instanceof Error ? err.message : "Yüklenemedi"))
       .finally(() => setLoading(false));
   }, []);
+
+  async function handleRiskSyncStep() {
+    setRiskSyncing(true);
+    setRiskSyncResult(null);
+    setError(null);
+    try {
+      const result = await triggerKapRiskSyncStep();
+      setRiskSyncResult(
+        result.message ??
+          `${result.fundsChecked} fon kontrol edildi · ${result.fundsRiskObtained} risk değeri elde edildi · ${result.fundsAmbiguous} belirsiz · ${result.fundsNotFound} bulunamadı · ${result.fundsError} hata (${result.status}).`,
+      );
+      await reload();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "KAP risk partisi tetiklenemedi");
+      await reload().catch(() => {});
+    } finally {
+      setRiskSyncing(false);
+    }
+  }
+
+  async function handleRiskFullRevalidation() {
+    if (!window.confirm("Tüm katılım fonlarının KAP kontrol durumu sıfırlanacak; bir sonraki partiler hepsini yeniden işleyecek. Devam edilsin mi?")) {
+      return;
+    }
+    setRiskSyncing(true);
+    setRiskSyncResult(null);
+    setError(null);
+    try {
+      const result = await triggerKapRiskFullRevalidation();
+      setRiskSyncResult(result.message ?? "Yeniden doğrulama sıfırlandı.");
+      await reload();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Yeniden doğrulama sıfırlanamadı");
+    } finally {
+      setRiskSyncing(false);
+    }
+  }
 
   async function handleManualSync() {
     setSyncing(true);
@@ -139,6 +190,15 @@ export function AdminSyncPage() {
         backfilling={backfilling}
         result={backfillResult}
         onRun={handleBackfillStep}
+      />
+
+      <KapRiskSyncCard
+        funds={funds}
+        runs={riskSyncRuns}
+        syncing={riskSyncing}
+        result={riskSyncResult}
+        onRunBatch={handleRiskSyncStep}
+        onRevalidateAll={handleRiskFullRevalidation}
       />
 
       <div className="card">
@@ -379,6 +439,162 @@ function PriceBackfillCard({
                   <td className="tabular-nums">{run.rows_upserted}</td>
                   <td className="tabular-nums">{run.funds_touched}</td>
                   <td style={{ maxWidth: 240, whiteSpace: "pre-wrap" }}>{run.error_summary ?? "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const RISK_SYNC_STATUS_VARIANT: Record<RiskSyncRunRow["status"], "mint" | "warning" | "danger" | "default"> = {
+  success: "mint",
+  partial: "warning",
+  failed: "danger",
+  running: "default",
+};
+
+function KapRiskSyncCard({
+  funds,
+  runs,
+  syncing,
+  result,
+  onRunBatch,
+  onRevalidateAll,
+}: {
+  funds: FundRow[];
+  runs: RiskSyncRunRow[];
+  syncing: boolean;
+  result: string | null;
+  onRunBatch: () => void;
+  onRevalidateAll: () => void;
+}) {
+  const [showFailed, setShowFailed] = useState(false);
+
+  const stats = useMemo(() => {
+    const total = funds.length;
+    const kapMatched = funds.filter((f) => f.kap_lookup_status === "matched").length;
+    const kapRiskObtained = funds.filter((f) => (f.risk_source ?? "").startsWith("kap")).length;
+    const referenceCatalogRemaining = funds.filter(
+      (f) => f.risk_value !== null && !(f.risk_source ?? "").startsWith("kap"),
+    ).length;
+    const stillMissing = funds.filter((f) => f.risk_value === null).length;
+    const ambiguous = funds.filter((f) => f.risk_verification_needed);
+    const notChecked = funds.filter((f) => f.kap_checked_at === null).length;
+    const lastChecked = funds
+      .map((f) => f.kap_checked_at)
+      .filter((d): d is string => Boolean(d))
+      .sort()
+      .at(-1);
+    return { total, kapMatched, kapRiskObtained, referenceCatalogRemaining, stillMissing, ambiguous, notChecked, lastChecked };
+  }, [funds]);
+
+  const lastRun = runs[0];
+
+  return (
+    <div className="card stack">
+      <div className="row-between">
+        <p className="section-title">KAP Risk Değeri Zenginleştirme</p>
+        <div className="row" style={{ gap: 8 }}>
+          <button className="btn btn-secondary btn-sm" onClick={onRevalidateAll} disabled={syncing}>
+            286 fonun tümünü yeniden doğrula
+          </button>
+          <button className="btn btn-primary btn-sm" onClick={onRunBatch} disabled={syncing || stats.notChecked === 0}>
+            {syncing ? "Çalışıyor…" : "Sıradaki KAP partisini işle"}
+          </button>
+        </div>
+      </div>
+      <p className="page-subtitle">
+        KAP'ın (Kamuyu Aydınlatma Platformu) resmi, herkese açık fon sayfalarından risk değeri arar. Günlük TEFAS
+        senkronizasyonundan AYRIDIR; her tıklama küçük bir parti işler, KAP'a düşük istek hızıyla erişir.
+      </p>
+      {result && <Banner variant="info">{result}</Banner>}
+      <div className="stack-sm">
+        <div className="kv-row">
+          <span className="k">Toplam katılım fonu</span>
+          <span className="tabular-nums">{stats.total}</span>
+        </div>
+        <div className="kv-row">
+          <span className="k">KAP'ta doğrulanmış fon (kod + kurucu eşleşti)</span>
+          <span className="tabular-nums">{stats.kapMatched}</span>
+        </div>
+        <div className="kv-row">
+          <span className="k">KAP'tan risk değeri elde edilen</span>
+          <span className="tabular-nums">{stats.kapRiskObtained}</span>
+        </div>
+        <div className="kv-row">
+          <span className="k">Referans katalogdan risk değeri (KAP'tan değil)</span>
+          <span className="tabular-nums">{stats.referenceCatalogRemaining}</span>
+        </div>
+        <div className="kv-row">
+          <span className="k">Hâlâ risk değeri eksik</span>
+          <span className="tabular-nums">{stats.stillMissing}</span>
+        </div>
+        <div className="kv-row">
+          <span className="k">Belirsiz / çelişkili (admin incelemesi gerekir)</span>
+          <span className="tabular-nums">{stats.ambiguous.length}</span>
+        </div>
+        <div className="kv-row">
+          <span className="k">Henüz KAP'ta hiç kontrol edilmemiş</span>
+          <span className="tabular-nums">{stats.notChecked}</span>
+        </div>
+        <div className="kv-row">
+          <span className="k">Son KAP kontrolü</span>
+          <span className="tabular-nums">{stats.lastChecked ? new Date(stats.lastChecked).toLocaleString("tr-TR") : "—"}</span>
+        </div>
+        {stats.ambiguous.length > 0 && (
+          <div>
+            <button className="btn btn-secondary btn-sm" onClick={() => setShowFailed((v) => !v)} type="button">
+              {showFailed ? "Belirsiz fonları gizle" : "Belirsiz fonları göster"}
+            </button>
+            {showFailed && (
+              <div className="stack-sm" style={{ marginTop: 8 }}>
+                {stats.ambiguous.map((f) => (
+                  <p key={f.id} className="disclaimer" style={{ wordBreak: "break-word" }}>
+                    <strong>{f.code}</strong> — {f.risk_verification_note ?? "neden belirtilmemiş"}
+                  </p>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+      {lastRun && lastRun.failed_fund_codes.length > 0 && (
+        <p className="disclaimer" style={{ wordBreak: "break-word" }}>
+          Son çalışmada başarısız olan kodlar (bir sonraki partide otomatik tekrar denenir):{" "}
+          {lastRun.failed_fund_codes.join(", ")}
+        </p>
+      )}
+      {runs.length > 0 && (
+        <div className="table-scroll">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Başlangıç</th>
+                <th>Durum</th>
+                <th>Kontrol</th>
+                <th>Eşleşen</th>
+                <th>Risk elde edilen</th>
+                <th>Belirsiz</th>
+                <th>Bulunamadı</th>
+                <th>Hata</th>
+              </tr>
+            </thead>
+            <tbody>
+              {runs.map((run) => (
+                <tr key={run.id}>
+                  <td>{new Date(run.started_at).toLocaleString("tr-TR")}</td>
+                  <td>
+                    <Badge variant={RISK_SYNC_STATUS_VARIANT[run.status]}>{run.status}</Badge>
+                  </td>
+                  <td className="tabular-nums">{run.funds_checked}</td>
+                  <td className="tabular-nums">{run.funds_matched}</td>
+                  <td className="tabular-nums">{run.funds_risk_obtained}</td>
+                  <td className="tabular-nums">{run.funds_ambiguous}</td>
+                  <td className="tabular-nums">{run.funds_not_found}</td>
+                  <td className="tabular-nums">{run.funds_error}</td>
                 </tr>
               ))}
             </tbody>
