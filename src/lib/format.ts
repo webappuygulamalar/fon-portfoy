@@ -53,3 +53,11 @@ export function formatDateTR(isoDate: string | null | undefined): string {
   if (Number.isNaN(d.getTime())) return "—";
   return dateFormatter.format(d);
 }
+
+/**
+ * Veritabanında ISO 4217 kodu (`TRY`) tutulur; kullanıcıya Türkiye'de
+ * alışılmış kısaltma (`TL`) gösterilir. Yalnızca gösterim amaçlıdır.
+ */
+export function formatCurrencyCode(currency: string): string {
+  return currency === "TRY" ? "TL" : currency;
+}

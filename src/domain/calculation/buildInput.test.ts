@@ -43,6 +43,9 @@ function mkFund(id: string, code: string, assetClass: FundRow["asset_class"], cu
     catalog_category: null,
     is_substitution_eligible: true,
     risk_value: null,
+    risk_source: null,
+    risk_updated_at: null,
+    currency_source: "tefas_default_try",
   };
 }
 

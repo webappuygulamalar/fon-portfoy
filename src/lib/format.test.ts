@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatNumber, formatTRY } from "./format";
+import { formatCurrencyCode, formatNumber, formatTRY } from "./format";
 
 describe("formatTRY", () => {
   it("küsüratı tam sıfır olan tutarlarda ,00 göstermez", () => {
@@ -34,5 +34,16 @@ describe("formatNumber — pay adedi gibi tam sayılar için binlik ayırıcı",
 
   it("tam sayılarda sahte ondalık basamak (,00) eklemez", () => {
     expect(formatNumber(260026)).not.toContain(",");
+  });
+});
+
+describe("formatCurrencyCode — veritabanı kodu -> kullanıcı gösterimi", () => {
+  it("TRY'yi TL olarak gösterir", () => {
+    expect(formatCurrencyCode("TRY")).toBe("TL");
+  });
+
+  it("USD/EUR'u olduğu gibi bırakır", () => {
+    expect(formatCurrencyCode("USD")).toBe("USD");
+    expect(formatCurrencyCode("EUR")).toBe("EUR");
   });
 });

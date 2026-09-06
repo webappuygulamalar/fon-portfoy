@@ -1,7 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { listActiveFunds, insertManualPrice } from "../../services/fundsRepository";
 import { listSyncRuns, triggerManualTefasSync } from "../../services/syncRepository";
 import type { FundRow, SyncRunRow } from "../../services/types";
+import { formatCurrencyCode } from "../../lib/format";
+import { ASSET_CLASS_LABELS } from "../../lib/constants";
 import { Banner } from "../../components/ui/Banner";
 import { Badge } from "../../components/ui/Badge";
 
@@ -92,6 +94,8 @@ export function AdminSyncPage() {
         </button>
       </div>
 
+      <DataCoverageCard funds={funds} />
+
       <div className="card">
         <p className="section-title">Çalışma Geçmişi</p>
         {loading ? (
@@ -134,6 +138,62 @@ export function AdminSyncPage() {
       </div>
 
       <ManualPriceForm funds={funds} onSaved={reload} />
+    </div>
+  );
+}
+
+function DataCoverageCard({ funds }: { funds: FundRow[] }) {
+  const stats = useMemo(() => {
+    const total = funds.length;
+    const withRisk = funds.filter((f) => f.risk_value !== null).length;
+    const byCurrency = new Map<string, number>();
+    for (const f of funds) {
+      byCurrency.set(f.currency, (byCurrency.get(f.currency) ?? 0) + 1);
+    }
+    const needsVerification = funds.filter((f) => f.verification_needed).length;
+    const eligibleByClass = new Map<string, number>();
+    for (const f of funds) {
+      if (f.is_substitution_eligible && f.asset_class) {
+        eligibleByClass.set(f.asset_class, (eligibleByClass.get(f.asset_class) ?? 0) + 1);
+      }
+    }
+    return { total, withRisk, byCurrency, needsVerification, eligibleByClass };
+  }, [funds]);
+
+  return (
+    <div className="card">
+      <p className="section-title">Veri Kapsamı</p>
+      <div className="stack-sm" style={{ marginTop: 10 }}>
+        <div className="kv-row">
+          <span className="k">Toplam aktif katılım fonu</span>
+          <span className="tabular-nums">{stats.total}</span>
+        </div>
+        <div className="kv-row">
+          <span className="k">Risk değeri bilinen fon</span>
+          <span className="tabular-nums">
+            {stats.withRisk} / {stats.total}
+          </span>
+        </div>
+        <div className="kv-row">
+          <span className="k">Doğrulama gereken fon</span>
+          <span className="tabular-nums">{stats.needsVerification}</span>
+        </div>
+        {[...stats.byCurrency.entries()]
+          .sort((a, b) => a[0].localeCompare(b[0]))
+          .map(([currency, count]) => (
+            <div className="kv-row" key={currency}>
+              <span className="k">{formatCurrencyCode(currency)} fon sayısı</span>
+              <span className="tabular-nums">{count}</span>
+            </div>
+          ))}
+        <hr className="divider" />
+        {[...stats.eligibleByClass.entries()].map(([assetClass, count]) => (
+          <div className="kv-row" key={assetClass}>
+            <span className="k">{ASSET_CLASS_LABELS[assetClass as keyof typeof ASSET_CLASS_LABELS]} — seçilebilir</span>
+            <span className="tabular-nums">{count}</span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

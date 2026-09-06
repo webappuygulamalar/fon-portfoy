@@ -5,7 +5,7 @@ import { useFundsExplorer, type FundExplorerRow } from "../../hooks/useFundsExpl
 import { useCalculatorSelection } from "../../context/CalculatorSelectionContext";
 import { ASSET_CLASS_LABELS } from "../../lib/constants";
 import type { FundAssetClass } from "../../domain/calculation/types";
-import { formatDateTR, formatNumber, formatPercent } from "../../lib/format";
+import { formatCurrencyCode, formatDateTR, formatNumber, formatPercent } from "../../lib/format";
 import { isPriceStale } from "../../lib/priceFreshness";
 import { Badge } from "../../components/ui/Badge";
 import { Banner } from "../../components/ui/Banner";
@@ -264,7 +264,7 @@ function FundRowDesktop({
       <td>{fund.fundType ?? "—"}</td>
       <td className="tabular-nums">{fund.riskValue ?? "—"}</td>
       <td className="tabular-nums">
-        {cell(fund.price)}
+        {cell(fund.price)} {fund.price !== null ? formatCurrencyCode(fund.currency) : ""}
         <div className="disclaimer">{fund.priceDate ? formatDateTR(fund.priceDate) : "—"}</div>
       </td>
       <td className="tabular-nums">{cell(fund.fundSize)}</td>
@@ -309,7 +309,8 @@ function FundCardMobile({
         <div className="kv-row">
           <span className="k">Son Fiyat</span>
           <span className="tabular-nums">
-            {cell(fund.price)} {fund.priceDate ? `(${formatDateTR(fund.priceDate)})` : ""}
+            {cell(fund.price)} {fund.price !== null ? formatCurrencyCode(fund.currency) : ""}{" "}
+            {fund.priceDate ? `(${formatDateTR(fund.priceDate)})` : ""}
           </span>
         </div>
         <div className="kv-row">

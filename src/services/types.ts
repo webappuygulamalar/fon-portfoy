@@ -33,8 +33,13 @@ export interface FundRow {
    * sınıflandırma güvenilir olmalı — bkz. verification_needed).
    */
   is_substitution_eligible: boolean;
-  /** TEFAS resmi risk değeri (1-7). Canlı kaynağı yoksa null ("—"). */
+  /** TEFAS resmi risk değeri (1-7). Doğrulanmış kaynağı yoksa null ("—"). */
   risk_value: number | null;
+  /** risk_value nereden geldi (ör. reference_catalog_2026-09-04). risk_value null ise bu da null'dur. */
+  risk_source: string | null;
+  risk_updated_at: string | null;
+  /** currency alanının nasıl belirlendiği: reference_catalog | title_pattern_doviz | tefas_default_try. */
+  currency_source: string;
 }
 
 export interface FundPriceRow {

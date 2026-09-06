@@ -4,7 +4,7 @@ import { resolveFundSelections } from "../../domain/calculation/buildInput";
 import type { FundAssetClass } from "../../domain/calculation/types";
 import type { ProfileModel } from "../../domain/model/publishedModel";
 import type { FundPriceRow, FundRow } from "../../services/types";
-import { formatDateTR, formatPercent } from "../../lib/format";
+import { formatCurrencyCode, formatDateTR, formatNumber, formatPercent } from "../../lib/format";
 import { isPriceStale } from "../../lib/priceFreshness";
 import { Badge } from "../ui/Badge";
 
@@ -73,7 +73,8 @@ export function AllocationEditor({
                 <div className="row" style={{ gap: 8 }}>
                   {sel.price ? (
                     <span className="disclaimer">
-                      Son fiyat: {sel.price.price} TL · {formatDateTR(sel.price.price_date)}
+                      Son fiyat: {formatNumber(sel.price.price)} {formatCurrencyCode(sel.price.currency)} ·{" "}
+                      {formatDateTR(sel.price.price_date)}
                     </span>
                   ) : (
                     <Badge variant="danger">Fiyat verisi yok</Badge>

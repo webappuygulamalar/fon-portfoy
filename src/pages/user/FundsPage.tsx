@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useFundsExplorer, type FundExplorerRow } from "../../hooks/useFundsExplorer";
 import { ASSET_CLASS_LABELS, type AssetClass } from "../../lib/constants";
-import { formatDateTR, formatNumber, formatPercent } from "../../lib/format";
+import { formatCurrencyCode, formatDateTR, formatNumber, formatPercent } from "../../lib/format";
 import { Banner } from "../../components/ui/Banner";
 import { Badge } from "../../components/ui/Badge";
 import { Disclaimer } from "../../components/ui/Disclaimer";
@@ -25,10 +25,6 @@ function cell(value: number | null, suffix = ""): string {
 function returnCell(value: number | null): string {
   if (value === null) return "—";
   return `${value >= 0 ? "+" : ""}${formatPercent(Math.round(value * 100) / 100)}`;
-}
-
-function assetClassLabel(assetClass: AssetClass | null): string {
-  return assetClass ? ASSET_CLASS_LABELS[assetClass] : "Model dışı";
 }
 
 export function FundsPage() {
@@ -179,7 +175,7 @@ export function FundsPage() {
             <option value="ALL">Tüm para birimleri</option>
             {currencies.map((c) => (
               <option key={c} value={c}>
-                {c}
+                {formatCurrencyCode(c)}
               </option>
             ))}
           </select>
@@ -230,10 +226,7 @@ export function FundsPage() {
                 <tr>
                   <th>Kod</th>
                   <th>Tam Ad</th>
-                  <th>Portföy Şirketi</th>
-                  <th>Model Sınıfı</th>
                   <th>Kategori</th>
-                  <th>Tür</th>
                   <th>Para Birimi</th>
                   <th>Risk</th>
                   <th>Son Fiyat</th>
@@ -253,11 +246,8 @@ export function FundsPage() {
                       {f.code} {f.verificationNeeded && <Badge variant="gold">doğrulama gerekli</Badge>}
                     </td>
                     <td>{f.name}</td>
-                    <td>{f.managementCompany ?? "—"}</td>
-                    <td>{assetClassLabel(f.assetClass)}</td>
                     <td>{f.catalogCategory ?? "—"}</td>
-                    <td>{f.fundType ?? "—"}</td>
-                    <td>{f.currency}</td>
+                    <td>{formatCurrencyCode(f.currency)}</td>
                     <td className="tabular-nums">{f.riskValue ?? "—"}</td>
                     <td className="tabular-nums">{cell(f.price)}</td>
                     <td>{f.priceDate ? formatDateTR(f.priceDate) : "—"}</td>
@@ -297,26 +287,14 @@ function FundCard({ fund }: { fund: FundExplorerRow }) {
           <strong>{fund.code}</strong>
           <p className="disclaimer">{fund.name}</p>
         </div>
-        <Badge>{assetClassLabel(fund.assetClass)}</Badge>
+        <Badge>{fund.catalogCategory ?? "Model dışı"}</Badge>
       </button>
 
       {expanded && (
         <div className="stack-sm" style={{ marginTop: 10 }}>
           <div className="kv-row">
-            <span className="k">Portföy Şirketi</span>
-            <span>{fund.managementCompany ?? "—"}</span>
-          </div>
-          <div className="kv-row">
-            <span className="k">Kategori</span>
-            <span>{fund.catalogCategory ?? "—"}</span>
-          </div>
-          <div className="kv-row">
-            <span className="k">Tür</span>
-            <span>{fund.fundType ?? "—"}</span>
-          </div>
-          <div className="kv-row">
             <span className="k">Para Birimi</span>
-            <span>{fund.currency}</span>
+            <span>{formatCurrencyCode(fund.currency)}</span>
           </div>
           <div className="kv-row">
             <span className="k">Risk Değeri</span>

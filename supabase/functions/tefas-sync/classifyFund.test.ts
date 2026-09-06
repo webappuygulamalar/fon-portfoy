@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classifyFund, classifyFundTitle } from "./classifyFund.ts";
+import { classifyFund, classifyFundTitle, detectCurrencyFromTitle } from "./classifyFund.ts";
 
 describe("classifyFundTitle — isim tabanlı sezgisel kurallar", () => {
   it("Para piyasası katılım fonunu MONEY_MARKET olarak sınıflandırır", () => {
@@ -64,5 +64,45 @@ describe("classifyFund — referans katalog önceliği", () => {
   it("referans kataloğunda olmayan bir kod için isim sezgisine düşer", () => {
     const result = classifyFund("YENI99", "TEST PORTFÖY ALTIN KATILIM FONU");
     expect(result.modelAssetClass).toBe("GOLD");
+  });
+
+  it("BKY için referans kataloğundan USD para birimini kullanır (TRY DEĞİL)", () => {
+    const result = classifyFund("BKY", "YAPI KREDİ PORTFÖY BİRİNCİ KATILIM SERBEST (DÖVİZ) FON");
+    expect(result.currency).toBe("USD");
+    expect(result.currencySource).toBe("reference_catalog");
+  });
+
+  it("bilinmeyen bir fon için risk değeri asla türetilmez, null kalır", () => {
+    const result = classifyFund("YENI99", "TEST PORTFÖY ALTIN KATILIM FONU");
+    expect(result.riskValue).toBeNull();
+    expect(result.riskSource).toBeNull();
+  });
+});
+
+describe("detectCurrencyFromTitle — başlık tabanlı para birimi kuralı", () => {
+  it("başlıkta 'döviz' yoksa TRY (varsayılan) döner", () => {
+    expect(detectCurrencyFromTitle("AK PORTFÖY PARA PİYASASI KATILIM FONU")).toEqual({
+      currency: "TRY",
+      source: "tefas_default_try",
+    });
+  });
+
+  it("'(Döviz)' geçen ve Avro/Euro içermeyen başlığı USD sayar", () => {
+    expect(detectCurrencyFromTitle("İŞ PORTFÖY BİRİNCİ KATILIM SERBEST (DÖVİZ) FON")).toEqual({
+      currency: "USD",
+      source: "title_pattern_doviz",
+    });
+  });
+
+  it("'(Döviz-Avro)' geçen başlığı EUR sayar", () => {
+    expect(
+      detectCurrencyFromTitle("KUVEYT TÜRK PORTFÖY ALTINCI KATILIM SERBEST (DÖVİZ-AVRO) FON"),
+    ).toEqual({ currency: "EUR", source: "title_pattern_doviz" });
+  });
+
+  it("TL etiketli bir kira sertifikası fonunu döviz saymaz", () => {
+    expect(detectCurrencyFromTitle("ASTRA PORTFÖY KİRA SERTİFİKASI KATILIM (TL) FONU").currency).toBe(
+      "TRY",
+    );
   });
 });

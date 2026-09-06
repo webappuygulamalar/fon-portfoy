@@ -125,9 +125,17 @@ export function CalculationSummary({ result }: CalculationSummaryProps) {
 }
 
 function PriceCell({ line }: { line: FundLineResult }) {
+  const isForeignCurrency = line.originalCurrency !== "TRY";
   return (
     <div className="stack-sm">
-      <span className="tabular-nums">{formatNumber(line.unitPriceTRY)} TL</span>
+      {isForeignCurrency && (
+        <span className="disclaimer">
+          Native fiyat: {formatNumber(line.originalPrice)} {line.originalCurrency}
+        </span>
+      )}
+      <span className="tabular-nums">
+        {formatNumber(line.unitPriceTRY)} TL{isForeignCurrency ? " (yaklaşık TL karşılığı)" : ""}
+      </span>
       <span className="disclaimer">{formatDateTR(line.priceDate)}</span>
       {line.isStalePrice && <Badge variant="warning">Eski fiyat</Badge>}
       {line.fxRateUsed && (
@@ -173,10 +181,19 @@ function FundCardMobile({ line }: { line: FundLineResult }) {
           <span className="k">Hedef tutar</span>
           <span className="tabular-nums">{formatTRY(line.targetAmount)}</span>
         </div>
+        {line.originalCurrency !== "TRY" && (
+          <div className="kv-row">
+            <span className="k">Native fiyat</span>
+            <span className="tabular-nums">
+              {formatNumber(line.originalPrice)} {line.originalCurrency}
+            </span>
+          </div>
+        )}
         <div className="kv-row">
           <span className="k">Birim fiyat</span>
           <span className="tabular-nums">
-            {formatNumber(line.unitPriceTRY)} TL · {formatDateTR(line.priceDate)}
+            {formatNumber(line.unitPriceTRY)} TL{line.originalCurrency !== "TRY" ? " (yaklaşık)" : ""} ·{" "}
+            {formatDateTR(line.priceDate)}
           </span>
         </div>
         <div className="kv-row">
