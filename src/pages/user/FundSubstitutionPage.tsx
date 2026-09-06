@@ -5,7 +5,7 @@ import { useFundsExplorer, type FundExplorerRow } from "../../hooks/useFundsExpl
 import { useCalculatorSelection } from "../../context/CalculatorSelectionContext";
 import { ASSET_CLASS_LABELS } from "../../lib/constants";
 import type { FundAssetClass } from "../../domain/calculation/types";
-import { formatCurrencyCode, formatDateTR, formatNumber, formatPercent } from "../../lib/format";
+import { formatCurrencyCode, formatDateTR, formatNumber, formatSignedPercent } from "../../lib/format";
 import { isPriceStale } from "../../lib/priceFreshness";
 import { Badge } from "../../components/ui/Badge";
 import { Banner } from "../../components/ui/Banner";
@@ -22,8 +22,7 @@ function cell(value: number | null, suffix = ""): string {
 }
 
 function returnCell(value: number | null): string {
-  if (value === null) return "—";
-  return `${value >= 0 ? "+" : ""}${formatPercent(Math.round(value * 100) / 100)}`;
+  return value === null ? "—" : formatSignedPercent(Math.round(value * 100) / 100);
 }
 
 export function FundSubstitutionPage() {

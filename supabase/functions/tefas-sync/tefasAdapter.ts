@@ -273,11 +273,11 @@ async function fetchBulkPage(
   fonTipi: string,
   basSira: number,
   bitSira: number,
-  now: Date,
+  basTarihStr: string,
+  bitTarihStr: string,
   timeoutMs: number,
   fetchImpl: typeof fetch,
 ): Promise<{ rows: TefasBulkRow[]; toplamSayi: number }> {
-  const start = new Date(now.getTime() - BULK_LOOKBACK_DAYS * 24 * 60 * 60 * 1000);
   const body = {
     fonTipi,
     fonKodu: null,
@@ -287,8 +287,8 @@ async function fetchBulkPage(
     sfonTurKod: null,
     fonTurAciklama: null,
     kurucuKod: null,
-    basTarih: formatYmd(start),
-    bitTarih: formatYmd(now),
+    basTarih: basTarihStr,
+    bitTarih: bitTarihStr,
     basSira,
     bitSira,
     dil: "TR",
@@ -341,6 +341,10 @@ async function fetchOneFonTipi(
   fetchImpl: typeof fetch,
   now: Date,
 ): Promise<LatestRowByCode> {
+  const start = new Date(now.getTime() - BULK_LOOKBACK_DAYS * 24 * 60 * 60 * 1000);
+  const basTarihStr = formatYmd(start);
+  const bitTarihStr = formatYmd(now);
+
   const latestByCode: LatestRowByCode = new Map();
   let basSira = 1;
   let toplamSayi = Number.POSITIVE_INFINITY;
@@ -351,7 +355,15 @@ async function fetchOneFonTipi(
     let lastErr: unknown;
     for (let attempt = 0; attempt <= 1; attempt++) {
       try {
-        page = await fetchBulkPage(fonTipi, basSira, basSira + BULK_PAGE_SIZE - 1, now, timeoutMs, fetchImpl);
+        page = await fetchBulkPage(
+          fonTipi,
+          basSira,
+          basSira + BULK_PAGE_SIZE - 1,
+          basTarihStr,
+          bitTarihStr,
+          timeoutMs,
+          fetchImpl,
+        );
         break;
       } catch (err) {
         lastErr = err;
@@ -450,4 +462,134 @@ export async function fetchAllParticipationFunds(
     });
   }
   return { funds, errors };
+}
+
+// ---------------------------------------------------------------------
+// Tarihsel fiyat geri yükleme (backfill) — günlük senkronizasyondan AYRI.
+//
+// TEFAS'ın toplu liste endpoint'i tek istekte en fazla ~1 aylık tarih
+// aralığı kabul ediyor: canlı olarak doğrulandı — daha geniş bir aralık
+// istendiğinde `{"errorMessage":"Geçersiz veri: Tarih aralığı 1 ayı
+// aşamaz", ...}` döner. Bu yüzden 1 yıllık geçmiş, checkpoint'li ve
+// tekrar tekrar çağrılabilir küçük pencerelerle (bkz. history-backfill
+// Edge Function) toplanır. Bu fonksiyon TEK bir pencere için, o pencere
+// içindeki HER (fon, tarih) satırını döner — günlük senkronizasyondaki
+// gibi yalnızca "en güncel"e indirgemez, çünkü geçmiş getiri hesabı için
+// TÜM günlere ihtiyaç vardır.
+const MAX_HISTORY_PAGES_PER_TYPE = 10;
+
+export interface HistoricalPriceRow {
+  code: string;
+  priceDate: string;
+  price: number;
+  fundSize: number | null;
+  investorCount: number | null;
+}
+
+export interface HistoryFetchOutcome {
+  rows: HistoricalPriceRow[];
+  errors: string[];
+}
+
+async function fetchOneFonTipiHistory(
+  fonTipi: "YAT" | "BYF",
+  basTarihStr: string,
+  bitTarihStr: string,
+  timeoutMs: number,
+  fetchImpl: typeof fetch,
+): Promise<HistoricalPriceRow[]> {
+  const rows: HistoricalPriceRow[] = [];
+  let basSira = 1;
+  let toplamSayi = Number.POSITIVE_INFINITY;
+  let pages = 0;
+
+  while (basSira <= toplamSayi && pages < MAX_HISTORY_PAGES_PER_TYPE) {
+    let page: { rows: TefasBulkRow[]; toplamSayi: number } | undefined;
+    let lastErr: unknown;
+    for (let attempt = 0; attempt <= 1; attempt++) {
+      try {
+        page = await fetchBulkPage(
+          fonTipi,
+          basSira,
+          basSira + BULK_PAGE_SIZE - 1,
+          basTarihStr,
+          bitTarihStr,
+          timeoutMs,
+          fetchImpl,
+        );
+        break;
+      } catch (err) {
+        lastErr = err;
+        if (err instanceof RetryableTefasError && attempt === 0) {
+          await sleep(500);
+          continue;
+        }
+        throw err instanceof Error ? err : new Error(String(lastErr));
+      }
+    }
+    if (!page) throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
+
+    toplamSayi = page.toplamSayi;
+    for (const row of page.rows) {
+      const code = (row.fonKodu ?? "").toString().trim().toUpperCase();
+      if (!code) continue;
+      let priceDate: string;
+      try {
+        priceDate = parseTefasDate(row.tarih ?? "");
+      } catch {
+        continue; // Ayrıştırılamayan tarihli satır sessizce atlanır; uydurulmaz.
+      }
+      const price = toNumber(row.fiyat);
+      if (price === null || price <= 0) continue; // Geçersiz/askıda fiyat uydurulmaz, atlanır.
+      rows.push({
+        code,
+        priceDate,
+        price,
+        fundSize: toNumber(row.portfoyBuyukluk),
+        investorCount: toNumber(row.kisiSayisi),
+      });
+    }
+
+    basSira += BULK_PAGE_SIZE;
+    pages++;
+  }
+
+  return rows;
+}
+
+/**
+ * Verilen [windowStart, windowEnd] penceresi (YYYY-MM-DD, TEFAS kısıtı
+ * gereği ~1 aydan kısa olmalı) için TÜM katılım fonlarının o pencaredeki
+ * HER GÜNLÜK fiyatını döner (yalnızca en güncel değil). İki fon tipi
+ * paralel ve birbirinden izole çekilir (bkz. fetchAllParticipationFunds
+ * ile aynı desen).
+ */
+export async function fetchParticipationFundPriceHistory(
+  windowStart: string,
+  windowEnd: string,
+  options: FetchTefasOptions = {},
+): Promise<HistoryFetchOutcome> {
+  const { timeoutMs = 15000, fetchImpl = fetch } = options;
+  const basTarihStr = windowStart.replaceAll("-", "");
+  const bitTarihStr = windowEnd.replaceAll("-", "");
+
+  const settled = await Promise.allSettled(
+    BULK_FON_TIPI_CANDIDATES.map((fonTipi) =>
+      fetchOneFonTipiHistory(fonTipi, basTarihStr, bitTarihStr, timeoutMs, fetchImpl),
+    ),
+  );
+
+  const rows: HistoricalPriceRow[] = [];
+  const errors: string[] = [];
+  settled.forEach((outcome, i) => {
+    const fonTipi = BULK_FON_TIPI_CANDIDATES[i];
+    if (outcome.status === "rejected") {
+      const message = outcome.reason instanceof Error ? outcome.reason.message : String(outcome.reason);
+      errors.push(`TEFAS geçmiş fiyat (fonTipi=${fonTipi}) alınamadı: ${message}`);
+      return;
+    }
+    rows.push(...outcome.value);
+  });
+
+  return { rows, errors };
 }

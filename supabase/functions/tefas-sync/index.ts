@@ -20,6 +20,7 @@ import { classifyFund, type FundClassification } from "./classifyFund.ts";
 import { fetchAllParticipationFunds } from "./tefasAdapter.ts";
 import { fetchTcmbRates } from "./fxRateAdapter.ts";
 import { CORS_HEADERS, jsonResponse } from "../_shared/jsonResponse.ts";
+import { authenticateSyncRequest } from "../_shared/authenticateSyncRequest.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -74,33 +75,9 @@ Deno.serve(async (req: Request) => {
     auth: { persistSession: false },
   });
 
-  const cronSecretHeader = req.headers.get("x-cron-secret");
-  let triggerType: "cron" | "manual";
-  let triggeredByAdminId: string | null = null;
-
-  if (CRON_SECRET && cronSecretHeader && cronSecretHeader === CRON_SECRET) {
-    triggerType = "cron";
-  } else {
-    const authHeader = req.headers.get("authorization") ?? "";
-    const token = authHeader.replace(/^Bearer\s+/i, "").trim();
-    if (!token) {
-      return jsonResponse({ error: "Yetkisiz: cron secret veya admin oturumu gerekli." }, 401);
-    }
-    const { data: userData, error: userErr } = await admin.auth.getUser(token);
-    if (userErr || !userData.user) {
-      return jsonResponse({ error: "Geçersiz oturum." }, 401);
-    }
-    const { data: adminRow } = await admin
-      .from("admin_users")
-      .select("id, is_active")
-      .eq("id", userData.user.id)
-      .maybeSingle();
-    if (!adminRow || !adminRow.is_active) {
-      return jsonResponse({ error: "Bu işlem için admin yetkisi gerekli." }, 403);
-    }
-    triggerType = "manual";
-    triggeredByAdminId = adminRow.id as string;
-  }
+  const authResult = await authenticateSyncRequest(req, admin, CRON_SECRET);
+  if (authResult instanceof Response) return authResult;
+  const { triggerType, triggeredByAdminId } = authResult;
 
   const { data: runRow, error: runInsertErr } = await admin
     .from("sync_runs")

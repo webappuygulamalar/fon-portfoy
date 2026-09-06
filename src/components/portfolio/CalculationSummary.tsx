@@ -1,6 +1,7 @@
 import { ASSET_CLASS_LABELS } from "../../lib/constants";
 import type { PortfolioCalculationResult, FundLineResult } from "../../domain/calculation/types";
 import { formatDateTR, formatNumber, formatPercent, formatTRY } from "../../lib/format";
+import { orderFundLinesForDisplay } from "./fundLineOrder";
 import { Badge } from "../ui/Badge";
 import { Banner } from "../ui/Banner";
 
@@ -30,9 +31,12 @@ export function CalculationSummary({ result }: CalculationSummaryProps) {
     );
   }
 
-  const allLines = [...result.fundLines, result.moneyMarketLine].filter(
-    (l): l is FundLineResult => l !== null,
-  );
+  // Gösterim sırası: Mevduat (ayrıca render edilir) -> PPF -> kalan fonlar
+  // model yüzdesine göre büyükten küçüğe -> Cari Hesap (ayrıca render
+  // edilir). Bu YALNIZCA ekran sırasıdır; hesaplama motoru PPF'yi hâlâ en
+  // son (diğer fonların kalanı eklendikten sonra) hesaplıyor — bkz.
+  // engine.ts, burada değiştirilmedi.
+  const allLines = orderFundLinesForDisplay(result.fundLines, result.moneyMarketLine);
   const depositPlannedPct =
     result.distribution.find((d) => d.assetClass === "DEPOSIT")?.plannedPercentage ?? 0;
 

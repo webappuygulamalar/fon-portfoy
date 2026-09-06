@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useFundsExplorer, type FundExplorerRow } from "../../hooks/useFundsExplorer";
 import { ASSET_CLASS_LABELS, type AssetClass } from "../../lib/constants";
-import { formatCurrencyCode, formatDateTR, formatNumber, formatPercent } from "../../lib/format";
+import { formatCurrencyCode, formatDateTR, formatNumber, formatSignedPercent } from "../../lib/format";
 import { Banner } from "../../components/ui/Banner";
 import { Badge } from "../../components/ui/Badge";
 import { Disclaimer } from "../../components/ui/Disclaimer";
@@ -23,8 +23,7 @@ function cell(value: number | null, suffix = ""): string {
 }
 
 function returnCell(value: number | null): string {
-  if (value === null) return "—";
-  return `${value >= 0 ? "+" : ""}${formatPercent(Math.round(value * 100) / 100)}`;
+  return value === null ? "—" : formatSignedPercent(Math.round(value * 100) / 100);
 }
 
 export function FundsPage() {

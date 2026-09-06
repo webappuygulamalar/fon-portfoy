@@ -47,6 +47,19 @@ export function formatPercent(value: number | Decimal.Value): string {
   return `%${numberFormatter.format(n.toNumber())}`;
 }
 
+/**
+ * Getiri gibi işaretli (pozitif/negatif olabilen) yüzdeleri Türkçe
+ * biçimde gösterir. İşaret HER ZAMAN "%" işaretinden ÖNCE gelir
+ * (ör. "-%3,2" — "%-3,2" DEĞİL). Pozitif değerlerde "+" öneki eklenir,
+ * sıfırda hiçbir işaret eklenmez.
+ */
+export function formatSignedPercent(value: number | Decimal.Value): string {
+  const n = value instanceof Decimal ? value : toDecimal(value);
+  if (n.isZero()) return formatPercent(0);
+  const sign = n.isNegative() ? "-" : "+";
+  return `${sign}${formatPercent(n.abs())}`;
+}
+
 export function formatDateTR(isoDate: string | null | undefined): string {
   if (!isoDate) return "—";
   const d = new Date(isoDate.length === 10 ? `${isoDate}T00:00:00Z` : isoDate);

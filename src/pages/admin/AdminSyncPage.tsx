@@ -1,8 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { listActiveFunds, insertManualPrice } from "../../services/fundsRepository";
-import { listSyncRuns, triggerManualTefasSync } from "../../services/syncRepository";
-import type { FundRow, SyncRunRow } from "../../services/types";
-import { formatCurrencyCode } from "../../lib/format";
+import {
+  getPriceBackfillCheckpoint,
+  listPriceBackfillRuns,
+  listSyncRuns,
+  triggerManualTefasSync,
+  triggerPriceBackfillStep,
+} from "../../services/syncRepository";
+import type { FundRow, PriceBackfillCheckpointRow, PriceBackfillRunRow, SyncRunRow } from "../../services/types";
+import { formatCurrencyCode, formatDateTR } from "../../lib/format";
 import { ASSET_CLASS_LABELS } from "../../lib/constants";
 import { Banner } from "../../components/ui/Banner";
 import { Badge } from "../../components/ui/Badge";
@@ -17,15 +23,46 @@ const STATUS_VARIANT: Record<SyncRunRow["status"], "mint" | "warning" | "danger"
 export function AdminSyncPage() {
   const [runs, setRuns] = useState<SyncRunRow[]>([]);
   const [funds, setFunds] = useState<FundRow[]>([]);
+  const [checkpoint, setCheckpoint] = useState<PriceBackfillCheckpointRow | null>(null);
+  const [backfillRuns, setBackfillRuns] = useState<PriceBackfillRunRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<string | null>(null);
+  const [backfilling, setBackfilling] = useState(false);
+  const [backfillResult, setBackfillResult] = useState<string | null>(null);
 
   async function reload() {
-    const [r, f] = await Promise.all([listSyncRuns(30), listActiveFunds()]);
+    const [r, f, cp, br] = await Promise.all([
+      listSyncRuns(30),
+      listActiveFunds(),
+      getPriceBackfillCheckpoint(),
+      listPriceBackfillRuns(10),
+    ]);
     setRuns(r);
     setFunds(f);
+    setCheckpoint(cp);
+    setBackfillRuns(br);
+  }
+
+  async function handleBackfillStep() {
+    setBackfilling(true);
+    setBackfillResult(null);
+    setError(null);
+    try {
+      const result = await triggerPriceBackfillStep();
+      setBackfillResult(
+        result.isComplete
+          ? "Geri yükleme tamamlandı."
+          : `Pencere ${result.windowStart} → ${result.windowEnd}: ${result.rowsUpserted} satır, ${result.fundsTouched} fon (${result.status}).`,
+      );
+      await reload();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Geri yükleme adımı tetiklenemedi");
+      await reload().catch(() => {});
+    } finally {
+      setBackfilling(false);
+    }
   }
 
   useEffect(() => {
@@ -96,6 +133,14 @@ export function AdminSyncPage() {
 
       <DataCoverageCard funds={funds} />
 
+      <PriceBackfillCard
+        checkpoint={checkpoint}
+        runs={backfillRuns}
+        backfilling={backfilling}
+        result={backfillResult}
+        onRun={handleBackfillStep}
+      />
+
       <div className="card">
         <p className="section-title">Çalışma Geçmişi</p>
         {loading ? (
@@ -143,12 +188,19 @@ export function AdminSyncPage() {
 }
 
 function DataCoverageCard({ funds }: { funds: FundRow[] }) {
+  const [showMissingRisk, setShowMissingRisk] = useState(false);
   const stats = useMemo(() => {
     const total = funds.length;
-    const withRisk = funds.filter((f) => f.risk_value !== null).length;
+    const withRisk = funds.filter((f) => f.risk_value !== null);
+    const missingRisk = funds.filter((f) => f.risk_value === null);
     const byCurrency = new Map<string, number>();
     for (const f of funds) {
       byCurrency.set(f.currency, (byCurrency.get(f.currency) ?? 0) + 1);
+    }
+    const bySource = new Map<string, number>();
+    for (const f of withRisk) {
+      const key = f.risk_source ?? "bilinmeyen";
+      bySource.set(key, (bySource.get(key) ?? 0) + 1);
     }
     const needsVerification = funds.filter((f) => f.verification_needed).length;
     const eligibleByClass = new Map<string, number>();
@@ -157,7 +209,12 @@ function DataCoverageCard({ funds }: { funds: FundRow[] }) {
         eligibleByClass.set(f.asset_class, (eligibleByClass.get(f.asset_class) ?? 0) + 1);
       }
     }
-    return { total, withRisk, byCurrency, needsVerification, eligibleByClass };
+    const lastRiskUpdate = withRisk
+      .map((f) => f.risk_updated_at)
+      .filter((d): d is string => Boolean(d))
+      .sort()
+      .at(-1);
+    return { total, withRisk, missingRisk, byCurrency, bySource, needsVerification, eligibleByClass, lastRiskUpdate };
   }, [funds]);
 
   return (
@@ -171,9 +228,39 @@ function DataCoverageCard({ funds }: { funds: FundRow[] }) {
         <div className="kv-row">
           <span className="k">Risk değeri bilinen fon</span>
           <span className="tabular-nums">
-            {stats.withRisk} / {stats.total}
+            {stats.withRisk.length} / {stats.total}
           </span>
         </div>
+        {[...stats.bySource.entries()].map(([source, count]) => (
+          <div className="kv-row" key={source}>
+            <span className="k">— kaynak: {source}</span>
+            <span className="tabular-nums">{count}</span>
+          </div>
+        ))}
+        <div className="kv-row">
+          <span className="k">Risk değeri eksik fon</span>
+          <span className="tabular-nums">{stats.missingRisk.length}</span>
+        </div>
+        <div className="kv-row">
+          <span className="k">Son risk metadata güncellemesi</span>
+          <span className="tabular-nums">{stats.lastRiskUpdate ? formatDateTR(stats.lastRiskUpdate) : "—"}</span>
+        </div>
+        {stats.missingRisk.length > 0 && (
+          <div>
+            <button
+              className="btn btn-secondary btn-sm"
+              onClick={() => setShowMissingRisk((v) => !v)}
+              type="button"
+            >
+              {showMissingRisk ? "Eksik risk kodlarını gizle" : "Eksik risk kodlarını göster"}
+            </button>
+            {showMissingRisk && (
+              <p className="disclaimer" style={{ marginTop: 8, wordBreak: "break-word" }}>
+                {stats.missingRisk.map((f) => f.code).join(", ")}
+              </p>
+            )}
+          </div>
+        )}
         <div className="kv-row">
           <span className="k">Doğrulama gereken fon</span>
           <span className="tabular-nums">{stats.needsVerification}</span>
@@ -194,6 +281,110 @@ function DataCoverageCard({ funds }: { funds: FundRow[] }) {
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+const BACKFILL_STATUS_VARIANT: Record<PriceBackfillRunRow["status"], "mint" | "warning" | "danger" | "default"> = {
+  success: "mint",
+  partial: "warning",
+  failed: "danger",
+  running: "default",
+};
+
+function PriceBackfillCard({
+  checkpoint,
+  runs,
+  backfilling,
+  result,
+  onRun,
+}: {
+  checkpoint: PriceBackfillCheckpointRow | null;
+  runs: PriceBackfillRunRow[];
+  backfilling: boolean;
+  result: string | null;
+  onRun: () => void;
+}) {
+  const progressPct = useMemo(() => {
+    if (!checkpoint) return null;
+    const today = new Date();
+    const target = new Date(checkpoint.target_start_date);
+    const oldest = new Date(checkpoint.oldest_fetched_date);
+    const totalDays = (today.getTime() - target.getTime()) / (24 * 60 * 60 * 1000);
+    const doneDays = (today.getTime() - oldest.getTime()) / (24 * 60 * 60 * 1000);
+    if (totalDays <= 0) return 100;
+    return Math.max(0, Math.min(100, Math.round((doneDays / totalDays) * 100)));
+  }, [checkpoint]);
+
+  return (
+    <div className="card stack">
+      <div className="row-between">
+        <p className="section-title">Tarihsel Fiyat Geri Yükleme (Getiri Hesabı İçin)</p>
+        <button className="btn btn-secondary btn-sm" onClick={onRun} disabled={backfilling || checkpoint?.is_complete}>
+          {backfilling ? "Çalışıyor…" : "Bir sonraki pencereyi çalıştır"}
+        </button>
+      </div>
+      {result && <Banner variant="info">{result}</Banner>}
+      {checkpoint ? (
+        <div className="stack-sm">
+          <div className="kv-row">
+            <span className="k">Durum</span>
+            <span>
+              <Badge variant={checkpoint.is_complete ? "mint" : "warning"}>
+                {checkpoint.is_complete ? "Tamamlandı" : "Devam ediyor"}
+              </Badge>
+            </span>
+          </div>
+          <div className="kv-row">
+            <span className="k">Şu ana kadar kapsanan en eski tarih</span>
+            <span className="tabular-nums">{formatDateTR(checkpoint.oldest_fetched_date)}</span>
+          </div>
+          <div className="kv-row">
+            <span className="k">Hedef başlangıç</span>
+            <span className="tabular-nums">{formatDateTR(checkpoint.target_start_date)}</span>
+          </div>
+          {progressPct !== null && (
+            <div className="kv-row">
+              <span className="k">İlerleme</span>
+              <span className="tabular-nums">%{progressPct}</span>
+            </div>
+          )}
+        </div>
+      ) : (
+        <p className="page-subtitle">Yükleniyor…</p>
+      )}
+      {runs.length > 0 && (
+        <div className="table-scroll">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Başlangıç</th>
+                <th>Pencere</th>
+                <th>Durum</th>
+                <th>Satır</th>
+                <th>Fon</th>
+                <th>Hata</th>
+              </tr>
+            </thead>
+            <tbody>
+              {runs.map((run) => (
+                <tr key={run.id}>
+                  <td>{new Date(run.started_at).toLocaleString("tr-TR")}</td>
+                  <td>
+                    {formatDateTR(run.window_start)} → {formatDateTR(run.window_end)}
+                  </td>
+                  <td>
+                    <Badge variant={BACKFILL_STATUS_VARIANT[run.status]}>{run.status}</Badge>
+                  </td>
+                  <td className="tabular-nums">{run.rows_upserted}</td>
+                  <td className="tabular-nums">{run.funds_touched}</td>
+                  <td style={{ maxWidth: 240, whiteSpace: "pre-wrap" }}>{run.error_summary ?? "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

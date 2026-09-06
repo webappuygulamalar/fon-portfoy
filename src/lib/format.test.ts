@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatCurrencyCode, formatNumber, formatTRY } from "./format";
+import { formatCurrencyCode, formatNumber, formatSignedPercent, formatTRY } from "./format";
 
 describe("formatTRY", () => {
   it("küsüratı tam sıfır olan tutarlarda ,00 göstermez", () => {
@@ -34,6 +34,20 @@ describe("formatNumber — pay adedi gibi tam sayılar için binlik ayırıcı",
 
   it("tam sayılarda sahte ondalık basamak (,00) eklemez", () => {
     expect(formatNumber(260026)).not.toContain(",");
+  });
+});
+
+describe("formatSignedPercent — getiri gibi işaretli yüzdeler", () => {
+  it("pozitif değerde işaret % işaretinden önce, + önekiyle gösterilir", () => {
+    expect(formatSignedPercent(12.4)).toBe("+%12,4");
+  });
+
+  it("negatif değerde eksi işareti % işaretinden ÖNCE gelir (%- değil)", () => {
+    expect(formatSignedPercent(-3.2)).toBe("-%3,2");
+  });
+
+  it("sıfırda işaret eklenmez", () => {
+    expect(formatSignedPercent(0)).toBe("%0");
   });
 });
 

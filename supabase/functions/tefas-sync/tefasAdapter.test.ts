@@ -3,6 +3,7 @@ import {
   extractManagementCompany,
   fetchAllParticipationFunds,
   fetchLatestFundPrice,
+  fetchParticipationFundPriceHistory,
   parseLatestPriceFromRows,
   parseTefasDate,
   toTitleCaseTR,
@@ -274,5 +275,69 @@ describe("fetchAllParticipationFunds — toplu katılım fonu keşfi", () => {
     const result = await fetchAllParticipationFunds({ fetchImpl: fetchImpl as unknown as typeof fetch });
     expect(result.funds.find((f) => f.code === "BAD")).toBeUndefined();
     expect(result.funds.find((f) => f.code === "OK1")).toBeDefined();
+  });
+});
+
+describe("fetchParticipationFundPriceHistory — pencere bazlı tarihsel fiyat", () => {
+  it("bir pencerede birden fazla fon/tarih satırını TAMAMEN döner (en güncele indirgemez)", async () => {
+    const fetchImpl = vi.fn(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(init.body as string);
+      expect(body.basTarih).toBe("20260801");
+      expect(body.bitTarih).toBe("20260831");
+      if (body.fonTipi === "BYF") {
+        return jsonResponse(200, { resultList: [], toplamSayi: 0, errorMessage: null });
+      }
+      return jsonResponse(200, {
+        resultList: [
+          { fonKodu: "AAA", fonUnvan: "TEST", tarih: "2026-08-01", fiyat: 1.0 },
+          { fonKodu: "AAA", fonUnvan: "TEST", tarih: "2026-08-02", fiyat: 1.01 },
+          { fonKodu: "BBB", fonUnvan: "TEST2", tarih: "2026-08-01", fiyat: 2.0 },
+        ],
+        toplamSayi: 3,
+        errorMessage: null,
+      });
+    });
+
+    const result = await fetchParticipationFundPriceHistory("2026-08-01", "2026-08-31", {
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+
+    expect(result.errors).toEqual([]);
+    expect(result.rows).toHaveLength(3);
+    expect(result.rows.filter((r) => r.code === "AAA")).toHaveLength(2);
+  });
+
+  it("geçersiz (<=0) fiyatlı satırı atlar, uydurmaz", async () => {
+    const fetchImpl = vi.fn(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(init.body as string);
+      if (body.fonTipi === "BYF") return jsonResponse(200, { resultList: [], toplamSayi: 0, errorMessage: null });
+      return jsonResponse(200, {
+        resultList: [{ fonKodu: "ZER", fonUnvan: "TEST", tarih: "2026-08-01", fiyat: 0 }],
+        toplamSayi: 1,
+        errorMessage: null,
+      });
+    });
+    const result = await fetchParticipationFundPriceHistory("2026-08-01", "2026-08-31", {
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+    expect(result.rows).toHaveLength(0);
+  });
+
+  it("bir fon tipi başarısız olsa bile diğerinin satırlarını kaybetmez", async () => {
+    const fetchImpl = vi.fn(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(init.body as string);
+      if (body.fonTipi === "BYF") return jsonResponse(500, {});
+      return jsonResponse(200, {
+        resultList: [{ fonKodu: "OK1", fonUnvan: "TEST", tarih: "2026-08-01", fiyat: 1 }],
+        toplamSayi: 1,
+        errorMessage: null,
+      });
+    });
+    const result = await fetchParticipationFundPriceHistory("2026-08-01", "2026-08-31", {
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+    expect(result.rows).toHaveLength(1);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]).toMatch(/fonTipi=BYF/);
   });
 });

@@ -1,6 +1,6 @@
 import { FunctionsFetchError, FunctionsHttpError, FunctionsRelayError } from "@supabase/supabase-js";
 import { supabase } from "./supabaseClient";
-import type { SyncRunRow } from "./types";
+import type { PriceBackfillCheckpointRow, PriceBackfillRunRow, SyncRunRow } from "./types";
 
 export async function listSyncRuns(limit = 20): Promise<SyncRunRow[]> {
   const { data, error } = await supabase
@@ -25,6 +25,46 @@ export async function triggerManualTefasSync(): Promise<{
   failedFundCodes: string[];
 }> {
   const { data, error } = await supabase.functions.invoke("tefas-sync", {
+    method: "POST",
+    body: { trigger: "manual" },
+  });
+  if (error) throw new Error(describeSyncError(error));
+  return data;
+}
+
+export async function getPriceBackfillCheckpoint(): Promise<PriceBackfillCheckpointRow | null> {
+  const { data, error } = await supabase.from("price_backfill_checkpoint").select("*").maybeSingle();
+  if (error) throw error;
+  return data;
+}
+
+export async function listPriceBackfillRuns(limit = 20): Promise<PriceBackfillRunRow[]> {
+  const { data, error } = await supabase
+    .from("price_backfill_runs")
+    .select("*")
+    .order("started_at", { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return data;
+}
+
+/**
+ * Admin panelinden "Bir sonraki geçmiş fiyat adımını çalıştır" butonuyla
+ * tetikleme. TEFAS tek istekte ~1 aydan fazla tarih aralığı kabul
+ * etmediğinden (canlı doğrulandı: "Tarih aralığı 1 ayı aşamaz"), bu HER
+ * ÇAĞRIDA yalnızca bir sonraki ~27 günlük pencereyi işler — tamamlanana
+ * kadar (checkpoint `is_complete=true` olana kadar) tekrar tekrar
+ * çağrılması gerekir.
+ */
+export async function triggerPriceBackfillStep(): Promise<{
+  status: string;
+  windowStart: string;
+  windowEnd: string;
+  rowsUpserted: number;
+  fundsTouched: number;
+  isComplete: boolean;
+}> {
+  const { data, error } = await supabase.functions.invoke("history-backfill", {
     method: "POST",
     body: { trigger: "manual" },
   });

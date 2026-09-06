@@ -402,6 +402,12 @@ deno_version = 2
 enabled = true
 verify_jwt = false
 
+# history-backfill de aynı nedenle (cron secret + admin JWT ikili
+# yetkilendirme) platform JWT doğrulamasını kapatır.
+[functions.history-backfill]
+enabled = true
+verify_jwt = false
+
 [analytics]
 enabled = true
 port = 54327

@@ -40,6 +40,10 @@ export interface FundRow {
   risk_updated_at: string | null;
   /** currency alanının nasıl belirlendiği: reference_catalog | title_pattern_doviz | tefas_default_try. */
   currency_source: string;
+  /** risk_value'in geldiği kaynağın URL'si. risk_value null ise bu da null'dur. */
+  risk_source_url: string | null;
+  /** true ise risk_value bilinen bir kaynaktan doğrulanmıştır (tahmin değildir). */
+  risk_verified: boolean;
 }
 
 export interface FundPriceRow {
@@ -123,6 +127,28 @@ export interface SyncRunRow {
   funds_failed: number;
   failed_fund_codes: string[];
   catalog_synced: boolean;
+  error_summary: string | null;
+}
+
+export interface PriceBackfillCheckpointRow {
+  id: boolean;
+  oldest_fetched_date: string;
+  target_start_date: string;
+  is_complete: boolean;
+  updated_at: string;
+}
+
+export interface PriceBackfillRunRow {
+  id: string;
+  started_at: string;
+  finished_at: string | null;
+  status: "running" | "success" | "partial" | "failed";
+  trigger_type: "cron" | "manual";
+  triggered_by_admin_id: string | null;
+  window_start: string;
+  window_end: string;
+  rows_upserted: number;
+  funds_touched: number;
   error_summary: string | null;
 }
 
