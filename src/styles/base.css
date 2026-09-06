@@ -102,7 +102,7 @@ svg {
   }
 
   .app-main {
-    padding: var(--space-4) var(--space-4) calc(var(--mobile-bar-height) + var(--space-6) + env(safe-area-inset-bottom));
+    padding: var(--space-4) var(--space-4) calc(var(--space-6) + env(safe-area-inset-bottom));
   }
 
   .app-topbar {
@@ -174,32 +174,48 @@ svg {
 }
 
 .mobile-tabbar {
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
+  position: sticky;
+  top: calc(var(--topbar-height) + env(safe-area-inset-top));
+  z-index: 20;
   display: flex;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
   background: var(--color-bg-elevated);
-  border-top: 1px solid var(--color-border);
-  padding-bottom: env(safe-area-inset-bottom);
-  z-index: 30;
+  border-bottom: 1px solid var(--color-border);
 }
 
 .mobile-tabbar-item {
   flex: 1;
+  min-width: 0;
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 2px;
-  min-height: var(--mobile-bar-height);
+  gap: var(--space-2);
+  min-height: 52px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border-strong);
+  background: var(--color-bg-elevated-2);
+  color: var(--color-text-muted);
   text-decoration: none;
-  color: var(--color-text-faint);
-  font-size: 11px;
-  font-weight: 600;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.mobile-tabbar-icon {
+  font-size: 20px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.mobile-tabbar-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .mobile-tabbar-item.active {
+  background: var(--color-mint-soft);
+  border-color: var(--color-mint);
   color: var(--color-mint);
 }
 

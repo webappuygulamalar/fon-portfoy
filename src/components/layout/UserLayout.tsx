@@ -51,10 +51,6 @@ export function UserLayout() {
           </div>
         </header>
 
-        <main className="app-main">
-          <Outlet />
-        </main>
-
         <nav className="mobile-tabbar mobile-only" aria-label="Ana gezinme">
           {navItems.map((item) => (
             <NavLink
@@ -63,11 +59,17 @@ export function UserLayout() {
               end={item.end}
               className={({ isActive }) => `mobile-tabbar-item${isActive ? " active" : ""}`}
             >
-              <span aria-hidden="true">{item.icon}</span>
-              {item.label}
+              <span className="mobile-tabbar-icon" aria-hidden="true">
+                {item.icon}
+              </span>
+              <span className="mobile-tabbar-label">{item.label}</span>
             </NavLink>
           ))}
         </nav>
+
+        <main className="app-main">
+          <Outlet />
+        </main>
       </div>
     </div>
   );
