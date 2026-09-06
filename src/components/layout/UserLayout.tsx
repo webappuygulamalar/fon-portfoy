@@ -10,7 +10,13 @@ export function UserLayout() {
     <div className="app-shell">
       <aside className="app-sidebar desktop-only">
         <div className="brand">
-          <span className="brand-mark">FP</span>
+          <img
+            className="brand-mark"
+            src={`${import.meta.env.BASE_URL}icons/icon-192.png`}
+            alt="Fon Portföy simgesi: model portföy dağılımını gösteren pasta grafiği"
+            width={32}
+            height={32}
+          />
           <span>Fon Portföy</span>
         </div>
         <nav>
@@ -34,7 +40,13 @@ export function UserLayout() {
       <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
         <header className="app-topbar mobile-only">
           <div className="brand">
-            <span className="brand-mark">FP</span>
+            <img
+              className="brand-mark"
+              src={`${import.meta.env.BASE_URL}icons/icon-192.png`}
+              alt="Fon Portföy simgesi: model portföy dağılımını gösteren pasta grafiği"
+              width={32}
+              height={32}
+            />
             <span>Fon Portföy</span>
           </div>
         </header>
