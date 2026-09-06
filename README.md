@@ -101,11 +101,20 @@ Repo değişkenleri (Settings → Secrets and variables → Actions → Variable
 Vite `base`, router ve PWA `scope`/`start_url` otomatik olarak `/fon-portfoy/`
 kullanır.
 
-## Geçici PWA ikonu
+## PWA ikonu
 
-`public/icons/*` altındaki "FP" ikonları **geçici placeholder**'dır. Gerçek
-logo hazır olduğunda aynı dosya adlarıyla (192, 512, maskable 512 ve favicon
-SVG) değiştirmeniz yeterlidir; başka bir yer güncellenmesi gerekmez.
+Kaynak görsel repo kökünde `fon-portfoy-app-icon-v3.png` (kare, 1254×1254;
+`public/` DIŞINDA tutulur ki dağıtılan siteye gereksiz yere yayınlanmasın).
+`public/icons/*` altındaki ikonlar bundan üretilmiştir: `icon-192.png`,
+`icon-512.png`, `apple-touch-icon.png` (180×180) ve `favicon-16/32/48.png`
+düz orantılı yeniden boyutlandırmadır. `icon-maskable-512.png` ayrıdır —
+maskable "güvenli alan" (içteki %80'lik daire) korunsun diye kaynak görsel
+~%86,5 oranında küçültülüp kendi arka plan rengiyle (kenar pikselinden
+örneklenmiş, yaklaşık `#01130D`) dolgulanmış 512×512'lik bir tuval üzerine
+ortalanmıştır. İkonu güncellemek isterseniz kaynak görseli (kare, aynı
+en-boy oranıyla) değiştirip aynı üretim adımlarını tekrarlayın ve aynı
+dosya adlarıyla `public/icons/*` altına yazın; `index.html`/`vite.config.ts`'de
+başka bir yer güncellenmesi gerekmez.
 
 ## Bilinen gerçek kısıtlamalar
 

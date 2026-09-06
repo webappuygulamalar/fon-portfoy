@@ -24,7 +24,6 @@ export default defineConfig(({ command }) => {
         // bir sürüm bulunduğunda service worker'ı hemen etkinleştirip
         // sayfayı otomatik yeniler.
         injectRegister: false,
-        includeAssets: ["icons/icon-mask.svg"],
         manifest: {
           name: "Fon Portföy",
           short_name: "Fon Portföy",
