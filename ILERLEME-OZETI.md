@@ -41,6 +41,14 @@ ve kullanıcı uygulamasındaki rozet, gerçek pasta grafiği logosuyla
 değiştirildi (Bölüm 14). TEFAS senkronizasyon saatleri Türkiye saatine göre
 08:30/09:45 olarak güncellendi (Bölüm 15).
 
+**Sonraki oturumda eklenenler (bkz. Bölüm 16-17):** Kullanıcı uygulamasının
+mobil navigasyonu, ekranın altındaki sabit sekme çubuğundan kaldırılıp
+"Fon Portföy" başlığının hemen altına, üstte sabit iki büyük sekme olarak
+taşındı (Bölüm 16). Fonlar sayfasında varlık sınıfı filtresi kaldırıldı,
+varsayılan sıralama 3 aylık getiriye (yüksekten düşüğe, eksik olan sonda)
+çevrildi, ve mobildeki büyük/boşluklu fon kartları kompakt, sütunları
+hizalı bir tabloyla değiştirildi (Bölüm 17).
+
 Bilinen bloklayıcı bir sorun yoktur — **proje tamamlanmıştır.**
 
 - **Canlı uygulama:** https://webappuygulamalar.github.io/fon-portfoy/
@@ -306,19 +314,20 @@ korunuyor, "Standart model değiştirildi" uyarısı çıkıyor, Fonlar sayfası
 286 fonu doğru filtreliyor, masaüstünde/mobilde yatay taşma yok, konsol
 hatası yok.
 
-## 7. Test / Lint / Build Sonuçları (en güncel — Bölüm 15 sonrası)
+## 7. Test / Lint / Build Sonuçları (en güncel — Bölüm 17 sonrası)
 
 ```
 Lint:      0 hata, 2 zararsız uyarı (context+hook aynı dosyada — standart pratik, iki context dosyası için)
 Typecheck: temiz (tsc -b; supabase/functions/** ayrıca `deno check` ile de temiz)
-Test:      179/179 geçti (16 dosya)
+Test:      203/203 geçti (18 dosya)
 Build:     başarılı (dist/, PWA service worker üretildi)
 Advisor:   0 şema/RLS uyarısı (2 auth-seviyesi WARN var: leaked-password-protection, MFA — bu oturumun kapsamı dışında, proje geneli Auth ayarları)
 ```
 
-(Bölüm 6 sonundaki 119/119 rakamı bu sayının bir önceki anlık görüntüsüdür;
-o bölümdeki diğer detaylar hâlâ geçerlidir, yalnızca toplam test sayısı
-sonraki oturumlarda eklenen yeni test dosyalarıyla arttı.)
+(Bölüm 6 sonundaki 119/119 ve daha sonraki 179/179 rakamları bu sayının
+önceki anlık görüntüleridir; o bölümlerdeki diğer detaylar hâlâ geçerlidir,
+yalnızca toplam test sayısı sonraki oturumlarda eklenen yeni test
+dosyalarıyla arttı.)
 
 ## 8. Bilinen/Açık Notlar
 
@@ -804,9 +813,71 @@ beklenmeden `trigger_tefas_sync()` doğrudan çağrılarak test edildi —
 olarak kaydedildi. (Bu test sırasında Bölüm 12.5'teki regresyon
 keşfedildi ve düzeltildi.) Commit `dfeccf7`.
 
-## 16. Güncel Commit Geçmişi (en yeniden en eskiye, bu özetin kapsadığı aralık)
+## 16. Mobil Navigasyonun Üst Sekmelere Taşınması (2026-09-07)
+
+Kullanıcı uygulamasındaki mobil navigasyon yeniden düzenlendi: "Hesaplama"
+ve "Fonlar" artık ekranın ALTINDA sabit bir sekme çubuğu değil, sayfanın
+ÜSTÜNDE, "Fon Portföy" logosunun hemen altında, yan yana eşit genişlikte
+iki büyük sekme (min. 52px dokunma alanı). Aktif sekme mint çerçeve +
+yumuşak mint arka planla vurgulanıyor. `src/components/layout/UserLayout.tsx`
+ve `src/styles/base.css` (`.mobile-tabbar*`) değişti; artık kullanılmayan
+`--mobile-bar-height` token'ı kaldırıldı. `.app-topbar` sınıfı admin
+panosuyla PAYLAŞILDIĞI için hiç değiştirilmedi — admin, masaüstü sol menü,
+rotalar ve PWA ikonu aynı kaldı.
+
+Playwright ile gerçek Chromium üzerinden 320/375/390/428px genişliklerde
+(iPhone 14 safe-area/notch, gerçek CDP `Emulation.setSafeAreaInsetsOverride`
+ile emüle edilerek) hem Hesaplama hem Fonlar sayfalarında doğrulandı: aktif
+sekme doğru değişiyor, yatay taşma yok, içerik üst navigasyon tarafından
+kapanmıyor, alt boşluk temizlendi. Commit `2dd9227`.
+
+## 17. Fonlar Sayfası Yeniden Düzenlemesi — Filtre Sadeleştirme, Varsayılan Sıralama, Mobil Kompakt Tablo (2026-09-07)
+
+**Filtre:** "Tüm varlık sınıfları / Para Piyasası Katılım Fonu / ..." combo
+box'ı Fonlar sayfasından tamamen kaldırıldı; filtre artık doğrudan "Tüm
+kategoriler" ile başlıyor. Kategori seçenekleri artık şu sırada:
+Tüm kategoriler → Para Piyasası & Kısa Vade (varsa) → geri kalanı alfabetik
+(`sortCatalogCategoriesForFilter`, `src/lib/fundCatalog.ts`). Bu değişiklik
+YALNIZCA genel Fonlar kataloğu arayüzünü ilgilendiriyor —
+`FundSubstitutionPage.tsx` (fon değiştirme ekranı) hiç dokunulmadı, aynı
+model varlık sınıfından fon seçme kısıtı ve ortak asgari uygunluk kuralı
+(`isFundEligibleForListing`, Bölüm 13) aynen geçerli.
+
+**Varsayılan sıralama:** Kullanıcı başka bir seçim yapmadıysa fonlar artık
+3 aylık getiriye göre yüksekten düşüğe sıralanıyor; 3 aylık getirisi
+olmayan fonlar sona düşüyor, eşitlikte fon koduna göre A-Z kararlı sıralama
+uygulanıyor. Sıralama dropdown'unun başlangıç etiketi "3 ay getirisi
+(yüksekten düşüğe)". Mantık `sortFundRows` (`src/lib/fundCatalog.ts`) içinde
+— ortak, test edilebilir, orijinal diziyi değiştirmiyor.
+
+**Mobil kompakt tablo:** Büyük, boşluklu `FundCard`/`record-card` listesi
+kaldırıldı; yerine Fon/1 Ay/3 Ay/Büyüklük kolonlu, tek CSS grid'i paylaşan
+(`.fund-compact` + `display:contents` satır/gövde sarmalayıcıları) kompakt
+bir tablo geldi — bu sayede sütun genişlikleri TÜM satırlar boyunca hizalı
+kalıyor (her satır kendi grid'ini oluştursaydı sütunlar kayardı, bu ilk
+denemede gerçek veriyle test edilirken ortaya çıktı ve düzeltildi). Fon
+büyüklüğü mobilde milyon TL'ye kısaltılıyor (`formatFundSizeShort`,
+`src/lib/format.ts`, ör. "343,4 mio ₺"); veri yoksa "—", asla 0/tahmini
+değer değil. Sayısal sütunlar (1 Ay/3 Ay: sabit 60px, nowrap; Büyüklük:
+70px, gerekirse iki satıra sarar) TEFAS'taki gerçek 204 fonun TAMAMINDA
+sıfır taşmayla doğrulandı — masaüstü tablo kolonları ve verileri
+değişmedi.
+
+**Doğrulama:** 8 yeni test dosyası/bloğu (`fundCatalog.test.ts`,
+`format.test.ts` eklentisi, `FundsPage.test.tsx` — varlık sınıfı filtresinin
+yokluğu, kategori sırası, varsayılan sıralama + eksik veri sonda + kod A-Z,
+mobil 1 Ay/3 Ay/Büyüklük görünürlüğü, milyon TL kısaltması). Playwright ile
+gerçek Chromium + gerçek Supabase verisiyle (204 fon) 320/375/390/428px ve
+1280px masaüstünde: yatay taşma yok, filtre/sıralama etkileşimleri
+(kategori filtresi, "Ada göre A-Z" sıralaması) doğru çalışıyor,
+`fon-degistir/:assetClass` ekranı etkilenmedi. Commit `7a9de1a`.
+
+## 18. Güncel Commit Geçmişi (en yeniden en eskiye, bu özetin kapsadığı aralık)
 
 ```
+7a9de1a Fonlar sayfasında filtreyi sadeleştir, varsayılan sıralamayı 3 ay getirisine çevir, mobilde kompakt tablo ekle
+2dd9227 Mobil navigasyonu alt sekmelerden üst sekmelere taşı
+c07fa4e ILERLEME-OZETI.md dosyasını kalıcı proje dokümantasyonu olarak ekle
 873459d tefas-sync'in KAP kaynaklı risk değerlerini sessizce ezmesini düzelt
 dfeccf7 TEFAS senkronizasyon cron saatlerini Türkiye saatine güncelle
 19cb86e Kullanıcı uygulamasındaki "FP" rozetini gerçek Fon Portföy ikonuyla değiştir
