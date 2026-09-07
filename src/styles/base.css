@@ -173,6 +173,12 @@ svg {
   color: var(--color-mint);
 }
 
+.nav-link-icon {
+  width: 21px;
+  height: 21px;
+  flex-shrink: 0;
+}
+
 .mobile-tabbar {
   position: sticky;
   top: calc(var(--topbar-height) + env(safe-area-inset-top));
@@ -202,8 +208,8 @@ svg {
 }
 
 .mobile-tabbar-icon {
-  font-size: 20px;
-  line-height: 1;
+  width: 23px;
+  height: 23px;
   flex-shrink: 0;
 }
 

@@ -1,8 +1,10 @@
 import { NavLink, Outlet } from "react-router-dom";
+import { PieChartIcon } from "../ui/PieChartIcon";
+import { CoinsIcon } from "../ui/CoinsIcon";
 
 const navItems = [
-  { to: "/", label: "Hesaplama", icon: "📊", end: true },
-  { to: "/fonlar", label: "Fonlar", icon: "📁", end: false },
+  { to: "/", label: "Hesaplama", Icon: PieChartIcon, end: true },
+  { to: "/fonlar", label: "Fonlar", Icon: CoinsIcon, end: false },
 ];
 
 export function UserLayout() {
@@ -28,7 +30,7 @@ export function UserLayout() {
                   end={item.end}
                   className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}
                 >
-                  <span aria-hidden="true">{item.icon}</span>
+                  <item.Icon className="nav-link-icon" />
                   {item.label}
                 </NavLink>
               </li>
@@ -59,9 +61,7 @@ export function UserLayout() {
               end={item.end}
               className={({ isActive }) => `mobile-tabbar-item${isActive ? " active" : ""}`}
             >
-              <span className="mobile-tabbar-icon" aria-hidden="true">
-                {item.icon}
-              </span>
+              <item.Icon className="mobile-tabbar-icon" />
               <span className="mobile-tabbar-label">{item.label}</span>
             </NavLink>
           ))}
