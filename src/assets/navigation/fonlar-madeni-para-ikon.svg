@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none" color="#37d6ad">
+  <ellipse
+    cx="16"
+    cy="7"
+    rx="10.5"
+    ry="4"
+    stroke="currentColor"
+    stroke-width="2.5"
+  />
+  <path
+    d="M5.5 7v6c0 2.2 4.7 4 10.5 4s10.5-1.8 10.5-4V7"
+    stroke="currentColor"
+    stroke-width="2.5"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <path
+    d="M5.5 13v6c0 2.2 4.7 4 10.5 4s10.5-1.8 10.5-4v-6"
+    stroke="currentColor"
+    stroke-width="2.5"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <path
+    d="M5.5 19v6c0 2.2 4.7 4 10.5 4s10.5-1.8 10.5-4v-6"
+    stroke="currentColor"
+    stroke-width="2.5"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+</svg>

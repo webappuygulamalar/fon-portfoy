@@ -1,10 +1,10 @@
 import { NavLink, Outlet } from "react-router-dom";
-import { PieChartIcon } from "../ui/PieChartIcon";
-import { CoinsIcon } from "../ui/CoinsIcon";
+import { HesaplamaPastaIcon } from "../ui/HesaplamaPastaIcon";
+import { FonlarMadeniParaIcon } from "../ui/FonlarMadeniParaIcon";
 
 const navItems = [
-  { to: "/", label: "Hesaplama", Icon: PieChartIcon, end: true },
-  { to: "/fonlar", label: "Fonlar", Icon: CoinsIcon, end: false },
+  { to: "/", label: "Hesaplama", Icon: HesaplamaPastaIcon, end: true },
+  { to: "/fonlar", label: "Fonlar", Icon: FonlarMadeniParaIcon, end: false },
 ];
 
 export function UserLayout() {
