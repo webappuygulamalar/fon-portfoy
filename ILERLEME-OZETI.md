@@ -60,7 +60,9 @@ oldu; Model Dağılımı'na 1 aylık getiri satırı eklendi (Bölüm 18).
 **Sonraki oturumda eklenenler (bkz. Bölüm 19):** Kullanıcı uygulamasındaki
 Hesaplama/Fonlar sekmelerinin 📊/📁 emojileri, yeni bağımlılık eklenmeden
 yazılmış sade SVG ikonlarla (pasta grafik / iç içe madeni para) değiştirildi
-(Bölüm 19).
+(Bölüm 19) — bu ilk elle çizilmiş ikonlar, aynı oturumda tasarımcının
+verdiği gerçek SVG dosyalarıyla (`src/assets/navigation/`) birebir
+değiştirildi (Bölüm 20, Bölüm 19'u supersede eder).
 
 Bilinen bloklayıcı bir sorun yoktur — **proje tamamlanmıştır.**
 
@@ -327,7 +329,7 @@ korunuyor, "Standart model değiştirildi" uyarısı çıkıyor, Fonlar sayfası
 286 fonu doğru filtreliyor, masaüstünde/mobilde yatay taşma yok, konsol
 hatası yok.
 
-## 7. Test / Lint / Build Sonuçları (en güncel — Bölüm 19 sonrası, aynı 236/236 — ikon değişikliği yeni test gerektirmedi, görsel doğrulama Bölüm 19'da)
+## 7. Test / Lint / Build Sonuçları (en güncel — Bölüm 20 sonrası, aynı 236/236 — ikon değişiklikleri yeni test gerektirmedi, görsel doğrulama Bölüm 19-20'de)
 
 ```
 Lint:      0 hata, 2 zararsız uyarı (context+hook aynı dosyada — standart pratik, iki context dosyası için)
@@ -968,6 +970,14 @@ sticky mobil navigasyonla çakışma yok. Commit `401734d`.
 
 ## 19. Hesaplama/Fonlar Nav İkonlarının Emojiden SVG'ye Çevrilmesi (2026-09-07)
 
+**ARTIK GEÇERLİ DEĞİL — bu bölümdeki elle çizilmiş `PieChartIcon`/
+`CoinsIcon` tasarımları, Bölüm 20'de tasarımcının verdiği gerçek SVG
+dosyalarıyla DEĞİŞTİRİLDİ (dosyalar silindi).** Aşağıdaki metin, o anki
+kararların (emoji kaldırma, currentColor mimarisi, aria-hidden, yeni
+bağımlılık eklememe) gerekçesini korumak için olduğu gibi bırakılmıştır
+— bu ilkeler Bölüm 20'de de aynen geçerlidir, yalnızca ikonların
+GÖRSELİ değişti.
+
 Mobil sekme çubuğu ve masaüstü sol menüdeki 📊/📁 emojileri kaldırılıp
 yerine iki küçük, bağımlılıksız, yeniden kullanılabilir SVG bileşeni
 kondu: `src/components/ui/PieChartIcon.tsx` (3 dilimli sade çizgisel
@@ -998,9 +1008,46 @@ iki sekmenin aktif/pasif durumunda doğrulandı: emoji kalmadı, yatay
 taşma yok, ikon boyutu/rengi beklenen aralık ve tonlarda
 (`rgb(46,217,168)` aktif, mevcut muted ton pasif). Commit `766115f`.
 
-## 20. Güncel Commit Geçmişi (en yeniden en eskiye, bu özetin kapsadığı aralık)
+## 20. Nav İkonlarının Tasarımcının Gerçek SVG'leriyle Değiştirilmesi (2026-09-07)
+
+Bölüm 19'daki elle çizilmiş `PieChartIcon`/`CoinsIcon` yerine, kullanıcının
+proje köküne eklediği `hesaplama-pasta-ikon.svg` ve
+`fonlar-madeni-para-ikon.svg` — `src/assets/navigation/`e taşındı —
+BİREBİR kullanıldı. Yeni bileşenler (`HesaplamaPastaIcon.tsx`,
+`FonlarMadeniParaIcon.tsx`) şekil verisini (path/ellipse koordinatları,
+`stroke-width="2.5"`, `stroke-linecap`/`stroke-linejoin="round"`, 32x32
+viewBox) hiç değiştirmeden kopyaladı; kaldırılan TEK şey kök `<svg>`
+üzerindeki `color="#37d6ad"` niteliğiydi — bu nitelik `currentColor`ı
+sabit bir tona kilitleyip aktif/pasif sekme rengine göre otomatik
+değişmesini (bu görevin en kritik gereksinimi) engelliyordu; kaldırılınca
+renk yine `.nav-link`/`.mobile-tabbar-item`'ın `color`'ından miras alınıyor.
+Eski `PieChartIcon.tsx`/`CoinsIcon.tsx` dosyaları (başka yerde
+kullanılmadıkları doğrulanarak) tamamen silindi.
+
+`<img>` ile harici SVG göstermenin `currentColor` mirasını kıracağı
+(doğru tespit) göz önüne alınarak, yeni paket veya SVG loader
+eklenmeden, `dangerouslySetInnerHTML` kullanılmadan, mevcut "inline SVG
+React bileşeni" deseni (Bölüm 19'dakiyle aynı mimari) sürdürüldü — CSS
+mask alternatifi bilinçli olarak tercih edilmedi çünkü mevcut mimariyle
+(zaten kurulu `.nav-link-icon`/`.mobile-tabbar-icon` boyutlandırma
+sınıfları) daha az değişiklikle örtüşüyordu ve maskeli öğelerin
+zorunlu-renk (forced-colors) modunda daha zayıf davranma riski var.
+
+İkon boyutları yeni istenen aralığa güncellendi: mobil 27px (26-28px),
+masaüstü 22px (21-23px) — önceki 23px/21px'ten büyütüldü. Metinler,
+rotalar, aktif sekme davranışı, buton boyutları, uygulama logosu, PWA
+ikonu ve admin paneli değişmedi.
+
+Playwright ile gerçek Chromium'da 320/375/390/428px ve masaüstünde, her
+iki sekmenin aktif/pasif durumunda doğrulandı: emoji/eski ikon kalmadı,
+yatay taşma yok, ikon boyutu tam istenen değerlerde (27x27 / 22x22),
+`viewBox="0 0 32 32"` korunmuş, renk aktifte `rgb(46,217,168)` (mint),
+pasifte mevcut muted ton, konsol hatası yok. Commit `554152c`.
+
+## 21. Güncel Commit Geçmişi (en yeniden en eskiye, bu özetin kapsadığı aralık)
 
 ```
+554152c Nav ikonlarını tasarımcının verdiği gerçek SVG'lerle değiştir
 766115f Hesaplama/Fonlar nav ikonlarını emojiden sade SVG ikonlara çevir
 401734d Portföy Hesaplama akışını risk profili kartları + ayrı sonuç sayfasıyla yeniden tasarla
 7a9de1a Fonlar sayfasında filtreyi sadeleştir, varsayılan sıralamayı 3 ay getirisine çevir, mobilde kompakt tablo ekle
