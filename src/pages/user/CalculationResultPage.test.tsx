@@ -117,6 +117,13 @@ vi.mock("../../hooks/usePublishedModel", () => ({
   usePublishedModel: () => ({ loading: false, error: null, data: mockData }),
 }));
 
+// Test fonlarının tamamı TRY olduğundan gerçek useFxRates zaten {} dönerdi;
+// burada mock'lanması yalnızca gerçek Supabase istemcisinin (supabaseClient.ts)
+// bu birim testinde hiç yüklenmemesini sağlar.
+vi.mock("../../hooks/useFxRates", () => ({
+  useFxRates: () => ({}),
+}));
+
 function seedSession(overrides: Partial<{ totalAmountInput: string; selectedProfileId: string }> = {}) {
   sessionStorage.setItem(
     "fonPortfoy.calculatorSelection.v1",
