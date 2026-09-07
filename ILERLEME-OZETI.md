@@ -57,6 +57,11 @@ sonuc`) gösteriliyor. Model Dağılımı/Pay Hesaplama Özeti sıralaması tüm
 profillerde Mevduat → PPF → azalan yüzde (eşitlikte kod A-Z) → Cari Hesap
 oldu; Model Dağılımı'na 1 aylık getiri satırı eklendi (Bölüm 18).
 
+**Sonraki oturumda eklenenler (bkz. Bölüm 19):** Kullanıcı uygulamasındaki
+Hesaplama/Fonlar sekmelerinin 📊/📁 emojileri, yeni bağımlılık eklenmeden
+yazılmış sade SVG ikonlarla (pasta grafik / iç içe madeni para) değiştirildi
+(Bölüm 19).
+
 Bilinen bloklayıcı bir sorun yoktur — **proje tamamlanmıştır.**
 
 - **Canlı uygulama:** https://webappuygulamalar.github.io/fon-portfoy/
@@ -322,7 +327,7 @@ korunuyor, "Standart model değiştirildi" uyarısı çıkıyor, Fonlar sayfası
 286 fonu doğru filtreliyor, masaüstünde/mobilde yatay taşma yok, konsol
 hatası yok.
 
-## 7. Test / Lint / Build Sonuçları (en güncel — Bölüm 18 sonrası)
+## 7. Test / Lint / Build Sonuçları (en güncel — Bölüm 19 sonrası, aynı 236/236 — ikon değişikliği yeni test gerektirmedi, görsel doğrulama Bölüm 19'da)
 
 ```
 Lint:      0 hata, 2 zararsız uyarı (context+hook aynı dosyada — standart pratik, iki context dosyası için)
@@ -961,9 +966,42 @@ döndüğü, 320/375/390/428px'de yatay taşma YOK (`docOverflow: 0` — kart
 şeridinin kendi içindeki YATAY KAYDIRMA kasıtlı ve bekleniyordu),
 sticky mobil navigasyonla çakışma yok. Commit `401734d`.
 
-## 19. Güncel Commit Geçmişi (en yeniden en eskiye, bu özetin kapsadığı aralık)
+## 19. Hesaplama/Fonlar Nav İkonlarının Emojiden SVG'ye Çevrilmesi (2026-09-07)
+
+Mobil sekme çubuğu ve masaüstü sol menüdeki 📊/📁 emojileri kaldırılıp
+yerine iki küçük, bağımlılıksız, yeniden kullanılabilir SVG bileşeni
+kondu: `src/components/ui/PieChartIcon.tsx` (3 dilimli sade çizgisel
+pasta grafik) ve `CoinsIcon.tsx` (iki iç içe geçen madeni para dairesi)
+— Lucide'ın `PieChart`/`Coins` ikonlarıyla aynı tasarım dilinde (24x24
+viewBox, `stroke="currentColor"`, strokeWidth 2, yuvarlak uçlar).
+Projede zaten bir ikon kütüphanesi olmadığından (kontrol edildi, yok)
+yeni bağımlılık EKLENMEDİ. `currentColor` sayesinde aktif (mint) / pasif
+(mevcut gri-yeşil) renk, mevcut `.nav-link`/`.mobile-tabbar-item`
+CSS'inden otomatik devralınıyor — ekstra renk kodu gerekmedi, hover/
+focus/aktif durumlarında ikon rengi metinle birlikte değişiyor.
+Dekoratif oldukları için SVG'nin kendisi `aria-hidden="true"` (erişilebilir
+sekme adı, görünen metin, hiç değişmedi). `.mobile-tabbar-icon` ve yeni
+`.nav-link-icon`, emoji için kullanılan `font-size` yerine `width`/
+`height` ile boyutlandırılıyor (23px mobil, 21px masaüstü — istenen
+22-24px/20-22px aralıklarında).
+
+İlk denemede pasta grafik ikonu (merkezden 2 düz çizgi) saat kadranına
+benziyordu — 3 eşitsiz açılı çizgiye (peace-sign/Mercedes-logosu izlenimi
+vermeyecek şekilde asimetrik açılarla) geçilerek düzeltildi ve gerçek
+tarayıcıda tekrar doğrulandı. Metinler, rotalar, aktif sekme davranışı,
+buton boyutları, uygulama logosu, PWA ikonu ve admin paneli hiç
+değişmedi (`git diff --stat`: yalnızca `UserLayout.tsx` + `base.css` +
+2 yeni ikon dosyası).
+
+Playwright ile gerçek Chromium'da 320/375/390/428px ve masaüstünde, her
+iki sekmenin aktif/pasif durumunda doğrulandı: emoji kalmadı, yatay
+taşma yok, ikon boyutu/rengi beklenen aralık ve tonlarda
+(`rgb(46,217,168)` aktif, mevcut muted ton pasif). Commit `766115f`.
+
+## 20. Güncel Commit Geçmişi (en yeniden en eskiye, bu özetin kapsadığı aralık)
 
 ```
+766115f Hesaplama/Fonlar nav ikonlarını emojiden sade SVG ikonlara çevir
 401734d Portföy Hesaplama akışını risk profili kartları + ayrı sonuç sayfasıyla yeniden tasarla
 7a9de1a Fonlar sayfasında filtreyi sadeleştir, varsayılan sıralamayı 3 ay getirisine çevir, mobilde kompakt tablo ekle
 2dd9227 Mobil navigasyonu alt sekmelerden üst sekmelere taşı
