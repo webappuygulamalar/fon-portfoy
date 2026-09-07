@@ -93,12 +93,12 @@ export function FundSubstitutionPage() {
   function handleSelect(fundId: string) {
     const isStandard = fundId === standardFundId;
     setOverride(assetClassParam as FundAssetClass, isStandard ? null : fundId);
-    navigate("/");
+    navigate("/hesaplama/sonuc");
   }
 
   function handleResetToStandard() {
     setOverride(assetClassParam as FundAssetClass, null);
-    navigate("/");
+    navigate("/hesaplama/sonuc");
   }
 
   return (
@@ -121,7 +121,7 @@ export function FundSubstitutionPage() {
         ) : (
           <span />
         )}
-        <button className="btn btn-secondary btn-sm" onClick={() => navigate("/")}>
+        <button className="btn btn-secondary btn-sm" onClick={() => navigate("/hesaplama/sonuc")}>
           Vazgeç ve geri dön
         </button>
       </div>

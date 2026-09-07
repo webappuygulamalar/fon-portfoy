@@ -3,17 +3,24 @@ import { ASSET_CLASS_LABELS, type AssetClass } from "../../lib/constants";
 import { resolveFundSelections } from "../../domain/calculation/buildInput";
 import type { FundAssetClass } from "../../domain/calculation/types";
 import type { ProfileModel } from "../../domain/model/publishedModel";
-import type { FundPriceRow, FundRow } from "../../services/types";
-import { formatCurrencyCode, formatDateTR, formatNumber, formatPercent } from "../../lib/format";
+import type { FundPriceRow, FundReturnsRow, FundRow } from "../../services/types";
+import { formatCurrencyCode, formatDateTR, formatNumber, formatPercent, formatSignedPercent } from "../../lib/format";
 import { isPriceStale } from "../../lib/priceFreshness";
 import { Badge } from "../ui/Badge";
+import { orderFundSelectionsForDisplay } from "./fundLineOrder";
 
 const MONEY_MARKET: FundAssetClass = "MONEY_MARKET";
+
+function formatReturn1m(row: FundReturnsRow | undefined): string {
+  const value = row?.return_1m_pct ? Number(row.return_1m_pct) : null;
+  return value === null ? "—" : formatSignedPercent(Math.round(value * 100) / 100);
+}
 
 interface AllocationEditorProps {
   profile: ProfileModel;
   fundsById: Record<string, FundRow>;
   latestPriceByFundId: Record<string, FundPriceRow>;
+  returnsByFundId: Record<string, FundReturnsRow>;
   overrides: Partial<Record<FundAssetClass, string>>;
   onResetOverrides: () => void;
 }
@@ -22,10 +29,14 @@ export function AllocationEditor({
   profile,
   fundsById,
   latestPriceByFundId,
+  returnsByFundId,
   overrides,
   onResetOverrides,
 }: AllocationEditorProps) {
-  const selections = resolveFundSelections(profile, fundsById, latestPriceByFundId, overrides);
+  const selections = orderFundSelectionsForDisplay(
+    resolveFundSelections(profile, fundsById, latestPriceByFundId, overrides),
+    profile,
+  );
   const hasOverrides = selections.some((s) => s.isOverride);
   const depositPct = profile.allocations.DEPOSIT ?? 0;
 
@@ -82,6 +93,8 @@ export function AllocationEditor({
                   {stale && <Badge variant="warning">Eski fiyat</Badge>}
                   {sel.fund.verification_needed && <Badge variant="gold">Doğrulama gerekli</Badge>}
                 </div>
+
+                <span className="disclaimer">1 aylık getiri: {formatReturn1m(returnsByFundId[sel.fund.id])}</span>
 
                 <div>
                   <Link className="btn btn-secondary btn-sm" to={`/fon-degistir/${sel.assetClass}`}>

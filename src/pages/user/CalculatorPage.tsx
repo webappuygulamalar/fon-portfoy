@@ -1,66 +1,25 @@
-import { useEffect, useMemo, useState } from "react";
-import { calculatePortfolio } from "../../domain/calculation/engine";
-import { buildCalculationInput, resolveFundSelections } from "../../domain/calculation/buildInput";
-import type { PortfolioCalculationResult } from "../../domain/calculation/types";
+import { useNavigate } from "react-router-dom";
 import { usePublishedModel } from "../../hooks/usePublishedModel";
-import { useFxRates } from "../../hooks/useFxRates";
 import { useCalculatorSelection } from "../../context/CalculatorSelectionContext";
 import { parseAmountValue } from "../../lib/amountInput";
 import { AmountInput } from "../../components/ui/AmountInput";
 import { Disclaimer } from "../../components/ui/Disclaimer";
 import { Banner } from "../../components/ui/Banner";
-import { AllocationEditor } from "../../components/portfolio/AllocationEditor";
-import { CalculationSummary } from "../../components/portfolio/CalculationSummary";
+import { RiskProfileSelector } from "../../components/portfolio/RiskProfileSelector";
 
 export function CalculatorPage() {
+  const navigate = useNavigate();
   const { loading, error, data } = usePublishedModel();
-  const {
-    totalAmountInput,
-    setTotalAmountInput,
-    selectedProfileId,
-    setSelectedProfileId,
-    overrides,
-    resetOverrides,
-  } = useCalculatorSelection();
-  const [result, setResult] = useState<PortfolioCalculationResult | null>(null);
-
-  useEffect(() => {
-    if (data && !selectedProfileId && data.profiles.length > 0) {
-      setSelectedProfileId(data.profiles[0].profileId);
-    }
-  }, [data, selectedProfileId, setSelectedProfileId]);
-
-  const selectedProfile = data?.profiles.find((p) => p.profileId === selectedProfileId) ?? null;
-
-  // resolveFundSelections, AllocationEditor içinde ayrıca çağrılır; burada
-  // yalnızca hangi döviz kurlarına ihtiyaç olduğunu belirlemek için kullanılır.
-  const selections = useMemo(() => {
-    if (!selectedProfile || !data) return [];
-    return resolveFundSelections(selectedProfile, data.fundsById, data.latestPriceByFundId, overrides);
-  }, [selectedProfile, data, overrides]);
-
-  const currenciesNeeded = selections.map((s) => s.price?.currency).filter((c): c is string => Boolean(c));
-  const fxRatesByCurrency = useFxRates(currenciesNeeded);
+  const { totalAmountInput, setTotalAmountInput, selectedProfileId, setSelectedProfileId } =
+    useCalculatorSelection();
 
   const parsedTotal = parseAmountValue(totalAmountInput);
   const isTotalValid = Number.isFinite(parsedTotal) && parsedTotal > 0;
-
-  function handleProfileChange(profileId: string) {
-    setSelectedProfileId(profileId);
-    setResult(null);
-  }
+  const hasProfileSelection = Boolean(selectedProfileId);
 
   function handleCalculate() {
-    if (!selectedProfile || !data || !isTotalValid) return;
-    const input = buildCalculationInput(
-      parsedTotal,
-      selectedProfile,
-      data.fundsById,
-      data.latestPriceByFundId,
-      overrides,
-      fxRatesByCurrency,
-    );
-    setResult(calculatePortfolio(input));
+    if (!isTotalValid || !hasProfileSelection) return;
+    navigate("/hesaplama/sonuc");
   }
 
   if (loading) {
@@ -80,82 +39,53 @@ export function CalculatorPage() {
       <div>
         <h1 className="page-title">Portföy Hesaplama</h1>
         <p className="page-subtitle">
-          Toplam tutarınızı girin, bir risk profili seçin ve model dağılımına göre pay hesaplama
-          özetini görün.
+          Toplam tutarınızı girin, bir risk profili seçin ve devam edin.
         </p>
       </div>
 
       <Disclaimer />
 
-      <div className="card stack">
-        <div className="row" style={{ alignItems: "flex-start" }}>
-          <div className="field" style={{ flex: "1 1 240px", minWidth: 220 }}>
-            <label className="field-label" htmlFor="total-amount">
-              Toplam Portföy Tutarı (TL)
-            </label>
-            <AmountInput
-              id="total-amount"
-              className="input tabular-nums"
-              placeholder="Örn. 100.000"
-              value={totalAmountInput}
-              onChange={(raw) => {
-                setTotalAmountInput(raw);
-                setResult(null);
-              }}
-            />
-          </div>
-
-          <div className="field" style={{ flex: "1 1 240px", minWidth: 220 }}>
-            <label className="field-label" htmlFor="risk-profile">
-              Risk Profili
-            </label>
-            <select
-              id="risk-profile"
-              className="select"
-              value={selectedProfileId}
-              onChange={(e) => handleProfileChange(e.target.value)}
-            >
-              {data.profiles.map((p) => (
-                <option key={p.profileId} value={p.profileId}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
-            {selectedProfile && <p className="page-subtitle">{selectedProfile.description}</p>}
-          </div>
+      <div className="card">
+        <div className="field">
+          <label className="field-label" htmlFor="total-amount">
+            Toplam Portföy Tutarı (TL)
+          </label>
+          <AmountInput
+            id="total-amount"
+            className="input tabular-nums"
+            placeholder="Örn. 100.000"
+            value={totalAmountInput}
+            onChange={setTotalAmountInput}
+          />
         </div>
-
-        <button className="btn btn-primary btn-block" disabled={!isTotalValid} onClick={handleCalculate}>
-          Portföyü Hesapla
-        </button>
       </div>
 
-      {selectedProfile && (
-        <div className="card">
-          <p className="section-title">Model Dağılımı</p>
-          <div style={{ marginTop: 12 }}>
-            <AllocationEditor
-              profile={selectedProfile}
-              fundsById={data.fundsById}
-              latestPriceByFundId={data.latestPriceByFundId}
-              overrides={overrides}
-              onResetOverrides={() => {
-                resetOverrides();
-                setResult(null);
-              }}
-            />
-          </div>
-        </div>
+      <div>
+        <p className="section-title" style={{ marginBottom: 12 }}>
+          Risk Profili
+        </p>
+        <RiskProfileSelector
+          profiles={data.profiles}
+          selectedProfileId={selectedProfileId}
+          onSelect={setSelectedProfileId}
+        />
+      </div>
+
+      {(!isTotalValid || !hasProfileSelection) && (
+        <p className="disclaimer" style={{ color: "var(--color-warning)" }}>
+          {!isTotalValid
+            ? "Devam etmek için toplam portföy tutarını girin."
+            : "Devam etmek için bir risk profili seçin."}
+        </p>
       )}
 
-      {result && (
-        <div>
-          <p className="section-title" style={{ marginBottom: 12 }}>
-            Pay Hesaplama Özeti
-          </p>
-          <CalculationSummary result={result} />
-        </div>
-      )}
+      <button
+        className="btn btn-primary btn-block"
+        disabled={!isTotalValid || !hasProfileSelection}
+        onClick={handleCalculate}
+      >
+        Portföyü Hesapla
+      </button>
     </div>
   );
 }

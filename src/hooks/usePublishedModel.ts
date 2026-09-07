@@ -1,14 +1,16 @@
 import { useCallback, useEffect, useState } from "react";
-import { getLatestPrices, listActiveFunds } from "../services/fundsRepository";
+import { getFundReturns, getLatestPrices, listActiveFunds } from "../services/fundsRepository";
 import { loadPublishedModelBundle } from "../services/modelRepository";
 import { buildProfileModels, type ProfileModel } from "../domain/model/publishedModel";
-import type { FundPriceRow, FundRow, ModelVersionRow } from "../services/types";
+import type { FundPriceRow, FundReturnsRow, FundRow, ModelVersionRow } from "../services/types";
 
 export interface PublishedModelData {
   version: ModelVersionRow;
   profiles: ProfileModel[];
   fundsById: Record<string, FundRow>;
   latestPriceByFundId: Record<string, FundPriceRow>;
+  /** 1/3 aylık vb. getiriler — tek toplu sorgu (bkz. getFundReturns), N+1 yok. */
+  returnsByFundId: Record<string, FundReturnsRow>;
 }
 
 interface UsePublishedModelResult {
@@ -31,10 +33,11 @@ export function usePublishedModel(): UsePublishedModelResult {
 
     async function load() {
       try {
-        const [bundle, funds, prices] = await Promise.all([
+        const [bundle, funds, prices, returns] = await Promise.all([
           loadPublishedModelBundle(),
           listActiveFunds(),
           getLatestPrices(),
+          getFundReturns(),
         ]);
         if (!active) return;
 
@@ -50,6 +53,7 @@ export function usePublishedModel(): UsePublishedModelResult {
           profiles,
           fundsById: Object.fromEntries(funds.map((f) => [f.id, f])),
           latestPriceByFundId: Object.fromEntries(prices.map((p) => [p.fund_id, p])),
+          returnsByFundId: Object.fromEntries(returns.map((r) => [r.fund_id, r])),
         });
       } catch (err) {
         if (active) setError(err instanceof Error ? err.message : "Bilinmeyen hata oluştu");

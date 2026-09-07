@@ -4,6 +4,7 @@ import { CalculatorSelectionProvider } from "./context/CalculatorSelectionContex
 import { UserLayout } from "./components/layout/UserLayout";
 import { AdminLayout } from "./components/layout/AdminLayout";
 import { CalculatorPage } from "./pages/user/CalculatorPage";
+import { CalculationResultPage } from "./pages/user/CalculationResultPage";
 import { FundsPage } from "./pages/user/FundsPage";
 import { FundSubstitutionPage } from "./pages/user/FundSubstitutionPage";
 import { AdminLoginPage } from "./pages/admin/AdminLoginPage";
@@ -19,6 +20,7 @@ export default function App() {
           <Routes>
             <Route element={<UserLayout />}>
               <Route index element={<CalculatorPage />} />
+              <Route path="hesaplama/sonuc" element={<CalculationResultPage />} />
               <Route path="fonlar" element={<FundsPage />} />
               <Route path="fon-degistir/:assetClass" element={<FundSubstitutionPage />} />
             </Route>
