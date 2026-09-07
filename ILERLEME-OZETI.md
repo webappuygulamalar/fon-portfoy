@@ -49,6 +49,14 @@ varsayılan sıralama 3 aylık getiriye (yüksekten düşüğe, eksik olan sonda
 çevrildi, ve mobildeki büyük/boşluklu fon kartları kompakt, sütunları
 hizalı bir tabloyla değiştirildi (Bölüm 17).
 
+**Sonraki oturumda eklenenler (bkz. Bölüm 18):** Portföy Hesaplama akışı
+yeniden tasarlandı — "Risk Profili" combo box'ı kaldırılıp yerine, model
+dağılımından üretilen SVG donut grafikli seçilebilir risk profili
+kartları geldi; hesaplama artık ayrı bir sonuç sayfasında (`#/hesaplama/
+sonuc`) gösteriliyor. Model Dağılımı/Pay Hesaplama Özeti sıralaması tüm
+profillerde Mevduat → PPF → azalan yüzde (eşitlikte kod A-Z) → Cari Hesap
+oldu; Model Dağılımı'na 1 aylık getiri satırı eklendi (Bölüm 18).
+
 Bilinen bloklayıcı bir sorun yoktur — **proje tamamlanmıştır.**
 
 - **Canlı uygulama:** https://webappuygulamalar.github.io/fon-portfoy/
@@ -314,19 +322,19 @@ korunuyor, "Standart model değiştirildi" uyarısı çıkıyor, Fonlar sayfası
 286 fonu doğru filtreliyor, masaüstünde/mobilde yatay taşma yok, konsol
 hatası yok.
 
-## 7. Test / Lint / Build Sonuçları (en güncel — Bölüm 17 sonrası)
+## 7. Test / Lint / Build Sonuçları (en güncel — Bölüm 18 sonrası)
 
 ```
 Lint:      0 hata, 2 zararsız uyarı (context+hook aynı dosyada — standart pratik, iki context dosyası için)
 Typecheck: temiz (tsc -b; supabase/functions/** ayrıca `deno check` ile de temiz)
-Test:      203/203 geçti (18 dosya)
+Test:      236/236 geçti (21 dosya)
 Build:     başarılı (dist/, PWA service worker üretildi)
 Advisor:   0 şema/RLS uyarısı (2 auth-seviyesi WARN var: leaked-password-protection, MFA — bu oturumun kapsamı dışında, proje geneli Auth ayarları)
 ```
 
-(Bölüm 6 sonundaki 119/119 ve daha sonraki 179/179 rakamları bu sayının
-önceki anlık görüntüleridir; o bölümlerdeki diğer detaylar hâlâ geçerlidir,
-yalnızca toplam test sayısı sonraki oturumlarda eklenen yeni test
+(Bölüm 6 sonundaki 119/119 ve daha sonraki 179/179, 203/203 rakamları bu
+sayının önceki anlık görüntüleridir; o bölümlerdeki diğer detaylar hâlâ
+geçerlidir, yalnızca toplam test sayısı sonraki oturumlarda eklenen yeni test
 dosyalarıyla arttı.)
 
 ## 8. Bilinen/Açık Notlar
@@ -872,9 +880,91 @@ gerçek Chromium + gerçek Supabase verisiyle (204 fon) 320/375/390/428px ve
 (kategori filtresi, "Ada göre A-Z" sıralaması) doğru çalışıyor,
 `fon-degistir/:assetClass` ekranı etkilenmedi. Commit `7a9de1a`.
 
-## 18. Güncel Commit Geçmişi (en yeniden en eskiye, bu özetin kapsadığı aralık)
+## 18. Portföy Hesaplama Akışının Yeniden Tasarımı (2026-09-07)
+
+**Risk profili kartları:** "Risk Profili" combo box'ı tamamen kaldırıldı.
+Yerine, Toplam Portföy Tutarı alanının altında bütün AKTİF risk
+profillerini (`usePublishedModel` → `listActiveRiskProfiles`, filtre
+zaten vardı) gösteren, seçilebilir kartlar geldi. Her kart: profil adı,
+o profilin GERÇEK model yüzdelerinden üretilen (asla sabit kodlanmayan)
+110-140px aralığında bir SVG donut grafik, altında kategori+yüzde legend'i
+ve kısa açıklama. Grafik/legend'de Mevduat + Para Piyasası Fonu YALNIZCA
+burada tek kategoride birleşiyor ("Mevduat/Para Piyasası Fonu"); diğer
+sınıflar kısa adlarla (Hisse, Altın, USD/Döviz) ayrı gösteriliyor; 5 sabit
+sınıfın dışında kalan (bugün mümkün olmayan ama ileride eklenebilecek) bir
+sınıf da kaybolmuyor — hepsi yeni, saf ve test edilebilir
+`src/domain/model/riskProfileChartCategories.ts` içinde. Grafik toplamı
+her zaman %100 (10 testle doğrulandı); hesaplama motorunun kullandığı
+gerçek dağılım bundan TAMAMEN bağımsız ve değişmedi.
+
+Grafik için yeni ağır bir kütüphane EKLENMEDİ — `stroke-dasharray`/
+`stroke-dashoffset` tekniğiyle çizen, bağımlılıksız, ~70 satırlık
+`src/components/ui/DonutChart.tsx` yazıldı (grafik dekoratif/aria-hidden,
+gerçek bilgi yanındaki legend metninden okunuyor — çift anons yok).
+Kartlar `<button aria-pressed>` (radio-group yerine bilinçli olarak daha
+basit, tam klavye/focus-visible destekli bu seçenek kullanıldı — Playwright
+ile Tab+Enter/Space gerçek tarayıcıda doğrulandı). Masaüstünde
+`auto-fit` grid, mobilde scroll-snap'li yatay kart şeridi (sonraki
+kartın kenardan taşması, daha fazla profil olduğunu ima ediyor).
+İlk açılışta hiçbir profil otomatik seçilmiyor (eski auto-select effect'i
+kaldırıldı); tutar/profil eksikken "Portföyü Hesapla" devre dışı ve
+altında açık bir doğrulama mesajı var.
+
+**Ayrı sonuç sayfası:** Giriş sayfası artık yalnızca tutar + kartlar +
+buton. "Portföyü Hesapla" yeni `#/hesaplama/sonuc` rotasını (yeni
+`CalculationResultPage.tsx`) açıyor — orada özet, Model Dağılımı, Pay
+Hesaplama Özeti, Toplamlar, Cari Hesap. Girdiler (tutar, profil,
+override'lar) zaten var olan `CalculatorSelectionContext`
+(sessionStorage) üzerinden taşınıyor — sonuç sayfası kendi state'inde
+HİÇBİR ŞEY saklamıyor, her render'da saf `calculatePortfolio` ile
+yeniden hesaplıyor; bu sayede sayfa yenilendiğinde de çalışmaya devam
+ediyor. Tutar geçersiz/boşsa, profil seçilmemişse VEYA seçili profil
+artık güncel yayınlanmış modelde yoksa (silinmiş/eski id) hata
+FIRLATMADAN `<Navigate to="/" replace />` ile hesaplama sayfasına
+yönlendiriliyor (FundSubstitutionPage'deki mevcut desenle aynı). Üstte
+belirgin bir "← Geri dön" düğmesi var. Fon değiştirme akışının başarı/
+iptal yönlendirmeleri (`FundSubstitutionPage.tsx`) kökten ("/") sonuç
+sayfasına ("/hesaplama/sonuc") çevrildi — artık bir fon değiştirilip
+geri dönüldüğünde kullanıcı sonucu görmeye devam ediyor (önceden köke
+düşüp "Portföyü Hesapla"ya tekrar basması gerekiyordu).
+
+**Sıralama:** Model Dağılımı ve Pay Hesaplama Özeti'nde satır sırası artık
+TÜM risk profillerinde: Mevduat → Para Piyasası Fonu → diğer fonlar model
+yüzdesine göre büyükten küçüğe (eşitlikte fon koduna göre A-Z) → Cari
+Hesap. Bu kural `fundLineOrder.ts`de merkezileşti: mevcut
+`orderFundLinesForDisplay`e kod eşitlik kırıcı eklendi (bir testin ESKİ
+"giriş sırasını korur" beklentisi, YENİ "kod A-Z" davranışına
+güncellendi — kasıtlı bir davranış değişikliği), ve Model Dağılımı için
+aynı kuralı uygulayan yeni `orderFundSelectionsForDisplay` eklendi.
+Mevduat/PPF grafikte birleşse de bu iki bölümde HER ZAMAN ayrı satır.
+
+**1 aylık getiri:** Model Dağılımı'ndaki her fon satırında "Son fiyat"/
+"Fiyat tarihi"nin altına "1 aylık getiri: +%3,24" (veya eksikse "—")
+satırı eklendi. Veri, `usePublishedModel`'in ZATEN yaptığı toplu
+sorgulara (`getFundReturns()`, tek `select * from fund_returns`) eklenen
+BİR sorguyla geliyor — N+1 yok. Mevduat satırında hiçbir fiyat/getiri
+gösterilmiyor (o satır zaten ayrı, fonsuz render ediliyor).
+
+**Değişmeyenler:** `engine.ts`/`buildInput.ts` (hesaplama matematiği),
+admin paneli, TEFAS/KAP senkronizasyonları, `isFundEligibleForListing`
+uygunluk politikası, PWA — hiçbiri değişmedi. Mevcut 17 `engine.test.ts`
+testi (yüzdeler, pay adetleri, PPF'ye aktarılan fark, cari hesap) hâlâ
+aynen geçiyor — bu, hesaplama sonuçlarının değişmediğinin regresyon kanıtı.
+
+**Doğrulama:** 46 yeni test (kategori birleşimi/sıralama/toplam %100,
+combo box yokluğu, kart seçimi, geçersiz/eksik parametre güvenliği, geri
+dönüşte tutar+profil korunması, sıralama, 1 aylık getirinin 3 durumu).
+Playwright ile gerçek Chromium + gerçek Supabase verisiyle: uçtan uca akış
+(tutar→kart seç→hesapla→sonuç→geri dön→state korunmuş), klavye
+gezinmesi (Tab/Enter/Space), fon değiştirme akışının sonuç sayfasına
+döndüğü, 320/375/390/428px'de yatay taşma YOK (`docOverflow: 0` — kart
+şeridinin kendi içindeki YATAY KAYDIRMA kasıtlı ve bekleniyordu),
+sticky mobil navigasyonla çakışma yok. Commit `401734d`.
+
+## 19. Güncel Commit Geçmişi (en yeniden en eskiye, bu özetin kapsadığı aralık)
 
 ```
+401734d Portföy Hesaplama akışını risk profili kartları + ayrı sonuç sayfasıyla yeniden tasarla
 7a9de1a Fonlar sayfasında filtreyi sadeleştir, varsayılan sıralamayı 3 ay getirisine çevir, mobilde kompakt tablo ekle
 2dd9227 Mobil navigasyonu alt sekmelerden üst sekmelere taşı
 c07fa4e ILERLEME-OZETI.md dosyasını kalıcı proje dokümantasyonu olarak ekle
