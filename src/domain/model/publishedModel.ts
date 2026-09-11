@@ -64,3 +64,27 @@ export function buildProfileModels(
       };
     });
 }
+
+/**
+ * Herhangi bir profile özel OLMAYAN, "varsayılan, tüm profiller"
+ * (`profile_id IS NULL`) tercih edilen fonları varlık sınıfına göre
+ * çözümler. Bu, admin panelinin bir modeli yayınlayabilmek için zorunlu
+ * tuttuğu (bkz. AdminModelEditorPage `missingPreferredFunds`) TEK profil
+ * bağımsız fon kaynağıdır — herhangi bir profile özgü override'ı içermez.
+ *
+ * Kullanım alanı: risk profillerinden bağımsız olarak kullanıcı tarafından
+ * oluşturulan Özel dağılım (bkz. `buildCustomProfileModel`), fon kodu veya
+ * profil tahmini yapmadan hangi fonun "standart" sayılacağını burada
+ * belirler.
+ */
+export function buildDefaultPreferredFundIdByAssetClass(
+  preferredFunds: ModelPreferredFundRow[],
+): Partial<Record<FundAssetClass, string>> {
+  const map: Partial<Record<FundAssetClass, string>> = {};
+  for (const p of preferredFunds) {
+    if (p.profile_id === null) {
+      map[p.asset_class as FundAssetClass] = p.fund_id;
+    }
+  }
+  return map;
+}

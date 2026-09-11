@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
 import { getFundReturns, getLatestPrices, listActiveFunds } from "../services/fundsRepository";
 import { loadPublishedModelBundle } from "../services/modelRepository";
-import { buildProfileModels, type ProfileModel } from "../domain/model/publishedModel";
+import {
+  buildDefaultPreferredFundIdByAssetClass,
+  buildProfileModels,
+  type ProfileModel,
+} from "../domain/model/publishedModel";
+import type { FundAssetClass } from "../domain/calculation/types";
 import type { FundPriceRow, FundReturnsRow, FundRow, ModelVersionRow } from "../services/types";
 
 export interface PublishedModelData {
@@ -11,6 +16,12 @@ export interface PublishedModelData {
   latestPriceByFundId: Record<string, FundPriceRow>;
   /** 1/3 aylık vb. getiriler — tek toplu sorgu (bkz. getFundReturns), N+1 yok. */
   returnsByFundId: Record<string, FundReturnsRow>;
+  /**
+   * Herhangi bir profile özel olmayan, "varsayılan, tüm profiller" fon
+   * tercihleri. Özel (kullanıcı tanımlı) dağılım için standart fon kaynağı
+   * budur — bkz. `buildCustomProfileModel`.
+   */
+  defaultPreferredFundIdByAssetClass: Partial<Record<FundAssetClass, string>>;
 }
 
 interface UsePublishedModelResult {
@@ -47,6 +58,9 @@ export function usePublishedModel(): UsePublishedModelResult {
         }
 
         const profiles = buildProfileModels(bundle.profiles, bundle.allocations, bundle.preferredFunds);
+        const defaultPreferredFundIdByAssetClass = buildDefaultPreferredFundIdByAssetClass(
+          bundle.preferredFunds,
+        );
 
         setData({
           version: bundle.version,
@@ -54,6 +68,7 @@ export function usePublishedModel(): UsePublishedModelResult {
           fundsById: Object.fromEntries(funds.map((f) => [f.id, f])),
           latestPriceByFundId: Object.fromEntries(prices.map((p) => [p.fund_id, p])),
           returnsByFundId: Object.fromEntries(returns.map((r) => [r.fund_id, r])),
+          defaultPreferredFundIdByAssetClass,
         });
       } catch (err) {
         if (active) setError(err instanceof Error ? err.message : "Bilinmeyen hata oluştu");

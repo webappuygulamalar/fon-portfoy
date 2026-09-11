@@ -3,6 +3,7 @@ import { Navigate, useNavigate, useParams } from "react-router-dom";
 import { usePublishedModel } from "../../hooks/usePublishedModel";
 import { useFundsExplorer, type FundExplorerRow } from "../../hooks/useFundsExplorer";
 import { useCalculatorSelection } from "../../context/CalculatorSelectionContext";
+import { buildCustomProfileModel, CUSTOM_PROFILE_ID } from "../../domain/calculation/customAllocation";
 import { ASSET_CLASS_LABELS } from "../../lib/constants";
 import type { FundAssetClass } from "../../domain/calculation/types";
 import { formatCurrencyCode, formatDateTR, formatNumber, formatSignedPercent } from "../../lib/format";
@@ -30,7 +31,8 @@ export function FundSubstitutionPage() {
   const navigate = useNavigate();
   const { data, loading: modelLoading, error: modelError } = usePublishedModel();
   const { rows, loading: rowsLoading, error: rowsError } = useFundsExplorer();
-  const { selectedProfileId, overrides, setOverride } = useCalculatorSelection();
+  const { selectedProfileId, overrides, setOverride, customAllocations } = useCalculatorSelection();
+  const isCustomSelected = selectedProfileId === CUSTOM_PROFILE_ID;
 
   const [search, setSearch] = useState("");
   const [companyFilter, setCompanyFilter] = useState("ALL");
@@ -81,7 +83,13 @@ export function FundSubstitutionPage() {
   if (rowsError) return <Banner variant="danger">Fon kataloğu yüklenemedi: {rowsError}</Banner>;
   if (!data) return <Banner variant="warning">Henüz yayınlanmış bir model portföy bulunmuyor.</Banner>;
 
-  const selectedProfile = data.profiles.find((p) => p.profileId === selectedProfileId) ?? data.profiles[0] ?? null;
+  // Özel dağılım seçiliyken gerçek profil listesinde ARANMAZ (orada hiçbir
+  // zaman bulunmaz) ve yanlışlıkla ilk gerçek profile düşülmez — "standart
+  // fon" burada da her zaman aynı merkezi kaynaktan (default preferred fund)
+  // çözülür (bkz. buildCustomProfileModel).
+  const selectedProfile = isCustomSelected
+    ? buildCustomProfileModel(customAllocations, data.defaultPreferredFundIdByAssetClass)
+    : (data.profiles.find((p) => p.profileId === selectedProfileId) ?? data.profiles[0] ?? null);
   if (!selectedProfile) {
     return <Banner variant="warning">Önce hesaplama sayfasından bir risk profili seçin.</Banner>;
   }
@@ -106,8 +114,11 @@ export function FundSubstitutionPage() {
       <div>
         <h1 className="page-title">{ASSET_CLASS_LABELS[assetClassParam]} Seç</h1>
         <p className="page-subtitle">
-          {selectedProfile.name} profili için bu varlık sınıfına uygun katılım fonları arasından seçim
-          yapın. Seçiminiz yalnızca bu tarayıcı oturumunda geçerli olur; yayınlanan model değişmez.
+          {isCustomSelected
+            ? "Özel dağılımınız için"
+            : `${selectedProfile.name} profili için`}{" "}
+          bu varlık sınıfına uygun katılım fonları arasından seçim yapın. Seçiminiz yalnızca bu tarayıcı
+          oturumunda geçerli olur; yayınlanan model değişmez.
         </p>
       </div>
 

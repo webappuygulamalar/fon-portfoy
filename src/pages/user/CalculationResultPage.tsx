@@ -2,6 +2,11 @@ import { useMemo } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
 import { calculatePortfolio } from "../../domain/calculation/engine";
 import { buildCalculationInput, resolveFundSelections } from "../../domain/calculation/buildInput";
+import {
+  buildCustomProfileModel,
+  CUSTOM_PROFILE_ID,
+  isCustomAllocationComplete,
+} from "../../domain/calculation/customAllocation";
 import { usePublishedModel } from "../../hooks/usePublishedModel";
 import { useFxRates } from "../../hooks/useFxRates";
 import { useCalculatorSelection } from "../../context/CalculatorSelectionContext";
@@ -26,10 +31,22 @@ import { CalculationSummary } from "../../components/portfolio/CalculationSummar
  */
 export function CalculationResultPage() {
   const navigate = useNavigate();
-  const { totalAmountInput, selectedProfileId, overrides, resetOverrides } = useCalculatorSelection();
+  const { totalAmountInput, selectedProfileId, overrides, resetOverrides, customAllocations } =
+    useCalculatorSelection();
   const { loading, error, data } = usePublishedModel();
 
-  const selectedProfile = data?.profiles.find((p) => p.profileId === selectedProfileId) ?? null;
+  const isCustomSelected = selectedProfileId === CUSTOM_PROFILE_ID;
+  const isCustomComplete = isCustomAllocationComplete(customAllocations);
+  // Özel dağılım, yayınlanmış modelin bir parçası değildir — gerçek
+  // profillerde yapıldığı gibi `data.profiles` içinde ARANMAZ. Aynı
+  // `ProfileModel` şekline (bkz. buildCustomProfileModel) dönüştürülerek
+  // aşağıdaki tüm akış (fon çözümü, hesaplama, gösterim) değişmeden
+  // yeniden kullanılır.
+  const selectedProfile = !data
+    ? null
+    : isCustomSelected
+      ? buildCustomProfileModel(customAllocations, data.defaultPreferredFundIdByAssetClass)
+      : (data.profiles.find((p) => p.profileId === selectedProfileId) ?? null);
 
   // resolveFundSelections, AllocationEditor içinde ayrıca çağrılır; burada
   // yalnızca hangi döviz kurlarına ihtiyaç olduğunu belirlemek için kullanılır.
@@ -45,7 +62,10 @@ export function CalculationResultPage() {
   const isTotalValid = Number.isFinite(parsedTotal) && parsedTotal > 0;
 
   // Tüm hook'lar yukarıda, koşulsuz çağrıldı — artık güvenle erken dönebiliriz.
-  if (!isTotalValid || !selectedProfileId) {
+  // Özel seçiliyken toplam tam %100 değilse (ör. sayfa doğrudan URL ile
+  // açıldıysa) CalculatorPage'deki "yalnızca %100'de hesapla" kısıtı burada
+  // da uygulanır — eksik/taşan bir dağılımla asla sonuç üretilmez.
+  if (!isTotalValid || !selectedProfileId || (isCustomSelected && !isCustomComplete)) {
     return <Navigate to="/" replace />;
   }
 
@@ -80,7 +100,11 @@ export function CalculationResultPage() {
 
       <div>
         <h1 className="page-title">Hesaplama Sonucu</h1>
-        <p className="page-subtitle">Model dağılımına göre pay hesaplama özetiniz.</p>
+        <p className="page-subtitle">
+          {isCustomSelected
+            ? "Özel dağılımınıza göre pay hesaplama özetiniz."
+            : "Model dağılımına göre pay hesaplama özetiniz."}
+        </p>
       </div>
 
       <Disclaimer />

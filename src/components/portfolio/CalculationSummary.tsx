@@ -36,9 +36,20 @@ export function CalculationSummary({ result }: CalculationSummaryProps) {
   // edilir). Bu YALNIZCA ekran sırasıdır; hesaplama motoru PPF'yi hâlâ en
   // son (diğer fonların kalanı eklendikten sonra) hesaplıyor — bkz.
   // engine.ts, burada değiştirilmedi.
-  const allLines = orderFundLinesForDisplay(result.fundLines, result.moneyMarketLine);
+  //
+  // %0 verilen bir kategori (ör. Özel dağılımda kullanıcının hiç pay
+  // ayırmadığı bir fon sınıfı) için yatırım satırı GÖSTERİLMEZ — hedef/
+  // gerçekleşen tutar zaten 0'dır, göstermek yanıltıcı bir "boş" satır
+  // yaratır. Para Piyasası Katılım Fonu bunun İSTİSNASIdır: diğer fonların
+  // yuvarlama kalanı her zaman ona eklenir (bkz. engine.ts), bu yüzden
+  // planlanan yüzdesi %0 olsa bile gerçek bir tutar taşıyabilir ve asla
+  // gizlenmez.
+  const allLines = orderFundLinesForDisplay(result.fundLines, result.moneyMarketLine).filter(
+    (line) => line.percentage > 0 || line.assetClass === "MONEY_MARKET",
+  );
   const depositPlannedPct =
     result.distribution.find((d) => d.assetClass === "DEPOSIT")?.plannedPercentage ?? 0;
+  const showDepositRow = depositPlannedPct > 0;
 
   return (
     <div className="stack">
@@ -61,14 +72,16 @@ export function CalculationSummary({ result }: CalculationSummaryProps) {
             </tr>
           </thead>
           <tbody>
-            <tr>
-              <td>{ASSET_CLASS_LABELS.DEPOSIT}</td>
-              <td className="tabular-nums">{formatPercent(depositPlannedPct)}</td>
-              <td className="tabular-nums">{formatTRY(result.depositAmount)}</td>
-              <td>—</td>
-              <td>—</td>
-              <td className="tabular-nums">{formatTRY(result.depositAmount)}</td>
-            </tr>
+            {showDepositRow && (
+              <tr>
+                <td>{ASSET_CLASS_LABELS.DEPOSIT}</td>
+                <td className="tabular-nums">{formatPercent(depositPlannedPct)}</td>
+                <td className="tabular-nums">{formatTRY(result.depositAmount)}</td>
+                <td>—</td>
+                <td>—</td>
+                <td className="tabular-nums">{formatTRY(result.depositAmount)}</td>
+              </tr>
+            )}
             {allLines.map((line) => (
               <FundRowDesktop key={line.assetClass} line={line} />
             ))}
@@ -85,12 +98,14 @@ export function CalculationSummary({ result }: CalculationSummaryProps) {
       </div>
 
       <div className="mobile-only stack-sm">
-        <div className="record-card">
-          <div className="row-between">
-            <strong>{ASSET_CLASS_LABELS.DEPOSIT}</strong>
-            <span className="tabular-nums">{formatTRY(result.depositAmount)}</span>
+        {showDepositRow && (
+          <div className="record-card">
+            <div className="row-between">
+              <strong>{ASSET_CLASS_LABELS.DEPOSIT}</strong>
+              <span className="tabular-nums">{formatTRY(result.depositAmount)}</span>
+            </div>
           </div>
-        </div>
+        )}
         {allLines.map((line) => (
           <FundCardMobile key={line.assetClass} line={line} />
         ))}

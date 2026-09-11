@@ -111,6 +111,12 @@ const mockData: PublishedModelData = {
     "fund-gold": mkReturn("fund-gold", "-2.10"), // negatif
     // fund-fx: kayıt yok -> eksik veri (—)
   },
+  defaultPreferredFundIdByAssetClass: {
+    MONEY_MARKET: "fund-mm",
+    BIST_EQUITY: "fund-bist",
+    GOLD: "fund-gold",
+    FX: "fund-fx",
+  },
 };
 
 vi.mock("../../hooks/usePublishedModel", () => ({
@@ -129,6 +135,28 @@ function seedSession(overrides: Partial<{ totalAmountInput: string; selectedProf
     "fonPortfoy.calculatorSelection.v1",
     JSON.stringify({ totalAmountInput: "1000000", selectedProfileId: "p1", overrides: {}, ...overrides }),
   );
+}
+
+function seedCustomSession(
+  customAllocations: Record<string, number>,
+  overrides: Partial<{ totalAmountInput: string; overrides: Record<string, string> }> = {},
+) {
+  sessionStorage.setItem(
+    "fonPortfoy.calculatorSelection.v1",
+    JSON.stringify({
+      totalAmountInput: "1000000",
+      selectedProfileId: "custom",
+      overrides: {},
+      customAllocations,
+      ...overrides,
+    }),
+  );
+}
+
+function rowContaining(code: string): HTMLElement | undefined {
+  return Array.from(document.querySelectorAll(".data-table tbody tr")).find((r) =>
+    r.textContent?.includes(code),
+  ) as HTMLElement | undefined;
 }
 
 function renderResultPage(initialPath = "/hesaplama/sonuc") {
@@ -237,5 +265,77 @@ describe("CalculationResultPage — Model Dağılımına 1 aylık getiri", () =>
     expect(depositCard).toBeDefined();
     expect(depositCard.textContent).not.toContain("1 aylık getiri");
     expect(depositCard.textContent).not.toContain("Son fiyat");
+  });
+});
+
+describe("CalculationResultPage — Özel dağılım", () => {
+  it("başlıkta ve Risk Profili alanında 'Özel Dağılım' açıkça gösterilir", () => {
+    seedCustomSession({ DEPOSIT: 40, MONEY_MARKET: 10, BIST_EQUITY: 20, GOLD: 20, FX: 10 });
+    renderResultPage();
+    expect(screen.getByText("Özel Dağılım")).toBeInTheDocument();
+    expect(screen.getByText("Özel dağılımınıza göre pay hesaplama özetiniz.")).toBeInTheDocument();
+  });
+
+  it("seçilen özel oranlar sonuç tablosunda doğru gösterilir", () => {
+    seedCustomSession({ DEPOSIT: 40, MONEY_MARKET: 10, BIST_EQUITY: 20, GOLD: 20, FX: 10 });
+    renderResultPage();
+
+    const depositRow = Array.from(document.querySelectorAll(".data-table tbody tr")).find(
+      (r) => r.querySelector("td")?.textContent?.trim() === "Mevduat",
+    ) as HTMLElement;
+    expect(depositRow.querySelectorAll("td")[1]?.textContent).toBe("%40");
+    expect(rowContaining("ZZZ")?.querySelectorAll("td")[1]?.textContent).toBe("%20"); // BIST_EQUITY
+    expect(rowContaining("AAA")?.querySelectorAll("td")[1]?.textContent).toBe("%20"); // GOLD
+    expect(rowContaining("FXX")?.querySelectorAll("td")[1]?.textContent).toBe("%10"); // FX
+  });
+
+  it("%0 verilen kategoriler (Para Piyasası Fonu hariç) sonuç satırlarında yer almaz", () => {
+    seedCustomSession({ DEPOSIT: 100, MONEY_MARKET: 0, BIST_EQUITY: 0, GOLD: 0, FX: 0 });
+    renderResultPage();
+
+    expect(rowContaining("ZZZ")).toBeUndefined();
+    expect(rowContaining("AAA")).toBeUndefined();
+    expect(rowContaining("FXX")).toBeUndefined();
+    // Para Piyasası Fonu, yuvarlama kalanını her zaman taşıyabileceği için
+    // planlanan yüzdesi %0 olsa bile satırı gizlenmez.
+    expect(rowContaining("PKT")).toBeDefined();
+  });
+
+  it("özel dağılım toplamı %100 değilken (bozuk/eski veri) hesaplama sayfasına yönlendirir", () => {
+    seedCustomSession({ DEPOSIT: 40, MONEY_MARKET: 10, BIST_EQUITY: 20, GOLD: 20, FX: 5 }); // toplam 95
+    renderResultPage();
+    expect(screen.getByText("HESAPLAMA GİRİŞ SAYFASI")).toBeInTheDocument();
+  });
+
+  it("sayfa yeniden render edildiğinde (sessionStorage) özel dağılım kaybolmaz", () => {
+    seedCustomSession({ DEPOSIT: 40, MONEY_MARKET: 10, BIST_EQUITY: 20, GOLD: 20, FX: 10 });
+    const { unmount } = renderResultPage();
+    expect(screen.getByText("Özel Dağılım")).toBeInTheDocument();
+    unmount();
+
+    renderResultPage();
+    expect(screen.getByText("Özel Dağılım")).toBeInTheDocument();
+    expect(rowContaining("ZZZ")?.querySelectorAll("td")[1]?.textContent).toBe("%20");
+  });
+
+  it("hazır profillerden birine geçilirse özel oranlar hesaplamaya karışmaz", () => {
+    // Özel oranlar sessionStorage'da dursa bile selectedProfileId gerçek bir profile işaret ediyorsa yok sayılmalı.
+    sessionStorage.setItem(
+      "fonPortfoy.calculatorSelection.v1",
+      JSON.stringify({
+        totalAmountInput: "1000000",
+        selectedProfileId: "p1",
+        overrides: {},
+        customAllocations: { DEPOSIT: 0, MONEY_MARKET: 0, BIST_EQUITY: 0, GOLD: 0, FX: 100 },
+      }),
+    );
+    renderResultPage();
+    expect(screen.getByText("Test Profili")).toBeInTheDocument();
+    expect(screen.queryByText("Özel Dağılım")).not.toBeInTheDocument();
+    // "Test Profili" mockData'sındaki DEPOSIT:40 kullanılmalı, özel FX:100 DEĞİL.
+    const depositRow = Array.from(document.querySelectorAll(".data-table tbody tr")).find(
+      (r) => r.querySelector("td")?.textContent?.trim() === "Mevduat",
+    ) as HTMLElement;
+    expect(depositRow.querySelectorAll("td")[1]?.textContent).toBe("%40");
   });
 });

@@ -42,6 +42,12 @@ const mockData: PublishedModelData = {
   fundsById: {},
   latestPriceByFundId: {},
   returnsByFundId: {},
+  defaultPreferredFundIdByAssetClass: {
+    MONEY_MARKET: "fund-mm-default",
+    BIST_EQUITY: "fund-bist-default",
+    GOLD: "fund-gold-default",
+    FX: "fund-fx-default",
+  },
 };
 
 vi.mock("../../hooks/usePublishedModel", () => ({
@@ -78,7 +84,8 @@ describe("CalculatorPage — risk profili kartları", () => {
     renderPage();
     expect(screen.getByText("Düşük 1")).toBeInTheDocument();
     expect(screen.getByText("Yüksek")).toBeInTheDocument();
-    expect(document.querySelectorAll(".risk-profile-card")).toHaveLength(2);
+    // 2 gerçek profil + Özel kart.
+    expect(document.querySelectorAll(".risk-profile-card")).toHaveLength(3);
   });
 
   it("bir karta tıklamak o profili seçili yapar (aria-pressed + doğru profil)", () => {
@@ -127,5 +134,139 @@ describe("CalculatorPage — hesapla akışı ve doğrulama", () => {
     fireEvent.click(button);
 
     expect(screen.getByText("SONUÇ SAYFASI")).toBeInTheDocument();
+  });
+});
+
+function customCard(): HTMLElement {
+  const cards = document.querySelectorAll(".risk-profile-card");
+  return cards[cards.length - 1] as HTMLElement;
+}
+
+function pctInput(label: string): HTMLInputElement {
+  return screen.getByLabelText(label) as HTMLInputElement;
+}
+
+describe("CalculatorPage — Özel kartı", () => {
+  it("hazır profillerden sonra, aynı tasarım dilinde (aynı sınıf) görünür", () => {
+    renderPage();
+    const cards = document.querySelectorAll(".risk-profile-card");
+    expect(cards).toHaveLength(3);
+    expect(cards[2].textContent).toContain("Özel");
+    expect(cards[2].textContent).toContain("Yatırım dağılımınızı kendiniz oluşturun.");
+  });
+
+  it("gerçek bir <button>'dır — Tab/Enter/Space ile doğal klavye erişimi sağlar", () => {
+    renderPage();
+    const card = customCard();
+    expect(card.tagName).toBe("BUTTON");
+    expect(card).toHaveAttribute("type", "button");
+    expect(card).not.toHaveAttribute("tabindex", "-1");
+  });
+
+  it("seçildiğinde aynı sayfada özel dağılım düzenleyicisi hemen açılır", () => {
+    renderPage();
+    expect(screen.queryByTestId("custom-allocation-editor")).not.toBeInTheDocument();
+    fireEvent.click(customCard());
+    expect(screen.getByTestId("custom-allocation-editor")).toBeInTheDocument();
+    expect(customCard()).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("gerçek bir risk profiline geçince düzenleyici kapanır ve özel oranlar hesaplamaya karışmaz", () => {
+    renderPage();
+    fireEvent.click(customCard());
+    fireEvent.change(pctInput("Döviz Katılım/Borçlanma Fonu"), { target: { value: "100" } });
+    expect(screen.getByTestId("custom-allocation-editor")).toBeInTheDocument();
+
+    fireEvent.click(document.querySelectorAll(".risk-profile-card")[0]); // "Düşük 1"
+    expect(screen.queryByTestId("custom-allocation-editor")).not.toBeInTheDocument();
+  });
+});
+
+describe("CalculatorPage — özel dağılım toplam kontrolü", () => {
+  beforeEach(() => {
+    renderPage();
+    fireEvent.click(customCard());
+  });
+
+  it("%99 toplamda tamamlanmamış uyarısı gösterir ve hesapla butonunu devre dışı bırakır", () => {
+    fireEvent.change(pctInput("Mevduat"), { target: { value: "99" } });
+    fireEvent.change(screen.getByLabelText("Toplam Portföy Tutarı (TL)"), { target: { value: "1000000" } });
+
+    expect(screen.getByText(/Toplamın %100 olması için %1 daha dağıtmalısınız/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Portföyü Hesapla" })).toBeDisabled();
+    expect(screen.getByText(/Devam etmek için özel dağılım toplamını %100 yapın/)).toBeInTheDocument();
+  });
+
+  it("%100 toplamda olumlu (yeşil) durum gösterir ve hesapla aktif olur", () => {
+    fireEvent.change(pctInput("Mevduat"), { target: { value: "100" } });
+    fireEvent.change(screen.getByLabelText("Toplam Portföy Tutarı (TL)"), { target: { value: "1000000" } });
+
+    expect(screen.getByText("Toplam %100 — hesaplamaya hazır.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Portföyü Hesapla" })).not.toBeDisabled();
+  });
+
+  it("%101 toplamda aşım uyarısı gösterir ve hesapla butonunu devre dışı bırakır", () => {
+    fireEvent.change(pctInput("Mevduat"), { target: { value: "100" } });
+    fireEvent.change(pctInput("Altın Katılım Fonu"), { target: { value: "1" } });
+    fireEvent.change(screen.getByLabelText("Toplam Portföy Tutarı (TL)"), { target: { value: "1000000" } });
+
+    expect(screen.getByText(/Toplam %100'ü %1 aşıyor/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Portföyü Hesapla" })).toBeDisabled();
+  });
+
+  it("negatif değer 0'a, 100'den büyük değer 100'e kırpılır", () => {
+    const input = pctInput("Mevduat");
+    fireEvent.change(input, { target: { value: "-5" } });
+    expect(input.value).toBe("0");
+    fireEvent.change(input, { target: { value: "250" } });
+    expect(input.value).toBe("100");
+  });
+
+  it("tüm tutar tek bir kategoriye %100 verilebilir", () => {
+    fireEvent.change(pctInput("Döviz Katılım/Borçlanma Fonu"), { target: { value: "100" } });
+    expect(screen.getByText("Toplam %100 — hesaplamaya hazır.")).toBeInTheDocument();
+  });
+
+  it("bazı kategoriler %0 bırakılabilir (toplamı 100 olduğu sürece)", () => {
+    fireEvent.change(pctInput("Mevduat"), { target: { value: "60" } });
+    fireEvent.change(pctInput("Para Piyasası Katılım Fonu"), { target: { value: "40" } });
+    // BIST_EQUITY, GOLD, FX %0 bırakıldı.
+    expect(screen.getByText("Toplam %100 — hesaplamaya hazır.")).toBeInTheDocument();
+    expect(pctInput("BIST Katılım Hisse Fonu").value).toBe("0");
+  });
+
+  it("tutar girilip özel dağılım %100 olunca hesapla /hesaplama/sonuc'a götürür", () => {
+    fireEvent.change(pctInput("Mevduat"), { target: { value: "100" } });
+    fireEvent.change(screen.getByLabelText("Toplam Portföy Tutarı (TL)"), { target: { value: "1000000" } });
+    fireEvent.click(screen.getByRole("button", { name: "Portföyü Hesapla" }));
+    expect(screen.getByText("SONUÇ SAYFASI")).toBeInTheDocument();
+  });
+});
+
+describe("CalculatorPage — özel dağılımın oturum boyunca korunması", () => {
+  it("sayfa yeniden render edildiğinde (sessionStorage) girilen yüzdeler korunur", () => {
+    const { unmount } = renderPage();
+    fireEvent.click(customCard());
+    fireEvent.change(pctInput("Altın Katılım Fonu"), { target: { value: "35" } });
+    unmount();
+
+    renderPage();
+    fireEvent.click(customCard());
+    expect(pctInput("Altın Katılım Fonu").value).toBe("35");
+  });
+
+  it("bozuk sessionStorage verisiyle sayfa güvenle %0'lardan açılır", () => {
+    sessionStorage.setItem(
+      "fonPortfoy.calculatorSelection.v1",
+      JSON.stringify({
+        totalAmountInput: "1000000",
+        selectedProfileId: "custom",
+        overrides: {},
+        customAllocations: { DEPOSIT: "elli", GOLD: 999 },
+      }),
+    );
+    renderPage();
+    expect(pctInput("Mevduat").value).toBe("0");
+    expect(pctInput("Altın Katılım Fonu").value).toBe("0");
   });
 });

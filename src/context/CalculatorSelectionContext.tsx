@@ -1,5 +1,11 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import type { AssetClass } from "../lib/constants";
 import type { FundAssetClass } from "../domain/calculation/types";
+import {
+  clampPercentage,
+  EMPTY_CUSTOM_ALLOCATIONS,
+  sanitizeCustomAllocations,
+} from "../domain/calculation/customAllocation";
 
 const STORAGE_KEY = "fonPortfoy.calculatorSelection.v1";
 
@@ -7,9 +13,16 @@ interface StoredState {
   totalAmountInput: string;
   selectedProfileId: string;
   overrides: Partial<Record<FundAssetClass, string>>;
+  /** "Özel" kartı için kullanıcı tanımlı yüzdeler. Veritabanına asla yazılmaz. */
+  customAllocations: Record<AssetClass, number>;
 }
 
-const EMPTY_STATE: StoredState = { totalAmountInput: "", selectedProfileId: "", overrides: {} };
+const EMPTY_STATE: StoredState = {
+  totalAmountInput: "",
+  selectedProfileId: "",
+  overrides: {},
+  customAllocations: { ...EMPTY_CUSTOM_ALLOCATIONS },
+};
 
 function loadStored(): StoredState {
   try {
@@ -21,6 +34,7 @@ function loadStored(): StoredState {
       selectedProfileId: typeof parsed.selectedProfileId === "string" ? parsed.selectedProfileId : "",
       overrides:
         parsed.overrides && typeof parsed.overrides === "object" ? parsed.overrides : {},
+      customAllocations: sanitizeCustomAllocations(parsed.customAllocations),
     };
   } catch {
     return EMPTY_STATE;
@@ -35,6 +49,8 @@ interface CalculatorSelectionContextValue {
   overrides: Partial<Record<FundAssetClass, string>>;
   setOverride: (assetClass: FundAssetClass, fundId: string | null) => void;
   resetOverrides: () => void;
+  customAllocations: Record<AssetClass, number>;
+  setCustomAllocationPercentage: (assetClass: AssetClass, value: number) => void;
 }
 
 const CalculatorSelectionContext = createContext<CalculatorSelectionContextValue | null>(null);
@@ -75,6 +91,15 @@ export function CalculatorSelectionProvider({ children }: { children: ReactNode 
           return { ...prev, overrides: next };
         }),
       resetOverrides: () => setState((prev) => ({ ...prev, overrides: {} })),
+      customAllocations: state.customAllocations,
+      setCustomAllocationPercentage: (assetClass, value) =>
+        setState((prev) => ({
+          ...prev,
+          customAllocations: {
+            ...prev.customAllocations,
+            [assetClass]: clampPercentage(value, prev.customAllocations[assetClass] ?? 0),
+          },
+        })),
     }),
     [state],
   );

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildProfileModels } from "./publishedModel";
+import { buildDefaultPreferredFundIdByAssetClass, buildProfileModels } from "./publishedModel";
 import type {
   ModelPreferredFundRow,
   ModelProfileAllocationRow,
@@ -34,5 +34,26 @@ describe("buildProfileModels", () => {
   it("sortOrder'a göre profilleri sıralar", () => {
     const result = buildProfileModels([...profiles].reverse(), allocations, []);
     expect(result.map((p) => p.key)).toEqual(["dusuk_1", "orta"]);
+  });
+});
+
+describe("buildDefaultPreferredFundIdByAssetClass", () => {
+  it("yalnızca profile_id NULL (varsayılan, tüm profiller) satırları döner, profile'a özel override'ları YOK sayar", () => {
+    const preferredFunds: ModelPreferredFundRow[] = [
+      { id: "pf1", model_version_id: "v1", profile_id: null, asset_class: "GOLD", fund_id: "fund-default-gold" },
+      { id: "pf2", model_version_id: "v1", profile_id: "p2", asset_class: "GOLD", fund_id: "fund-override-gold" },
+      { id: "pf3", model_version_id: "v1", profile_id: null, asset_class: "FX", fund_id: "fund-default-fx" },
+    ];
+
+    const result = buildDefaultPreferredFundIdByAssetClass(preferredFunds);
+
+    expect(result).toEqual({ GOLD: "fund-default-gold", FX: "fund-default-fx" });
+  });
+
+  it("hiçbir varsayılan yoksa boş nesne döner", () => {
+    const preferredFunds: ModelPreferredFundRow[] = [
+      { id: "pf1", model_version_id: "v1", profile_id: "p1", asset_class: "GOLD", fund_id: "fund-override" },
+    ];
+    expect(buildDefaultPreferredFundIdByAssetClass(preferredFunds)).toEqual({});
   });
 });

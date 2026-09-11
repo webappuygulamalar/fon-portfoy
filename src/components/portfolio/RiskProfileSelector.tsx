@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { buildRiskProfileChartCategories } from "../../domain/model/riskProfileChartCategories";
 import type { ProfileModel } from "../../domain/model/publishedModel";
 import { formatPercent } from "../../lib/format";
@@ -7,6 +8,8 @@ interface RiskProfileSelectorProps {
   profiles: ProfileModel[];
   selectedProfileId: string;
   onSelect: (profileId: string) => void;
+  /** Yayınlanmış profil kartlarından SONRA, aynı grid içinde gösterilecek ek kart(lar) — ör. Özel dağılım kartı. */
+  children?: ReactNode;
 }
 
 /**
@@ -21,7 +24,7 @@ interface RiskProfileSelectorProps {
  * — `role="radio"` ile tam roving-tabindex ok tuşu gezinmesi eklemeden
  * de klavye/erişilebilirlik gereksinimini karşılar.
  */
-export function RiskProfileSelector({ profiles, selectedProfileId, onSelect }: RiskProfileSelectorProps) {
+export function RiskProfileSelector({ profiles, selectedProfileId, onSelect, children }: RiskProfileSelectorProps) {
   return (
     <div className="risk-profile-grid" role="group" aria-label="Risk profili seçin">
       {profiles.map((profile) => {
@@ -56,6 +59,7 @@ export function RiskProfileSelector({ profiles, selectedProfileId, onSelect }: R
           </button>
         );
       })}
+      {children}
     </div>
   );
 }
