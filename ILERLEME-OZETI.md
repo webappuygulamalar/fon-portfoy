@@ -70,6 +70,17 @@ temizlendi. Ortak fon listeleme kuralına, risk değeri doğrulanmış olmak
 koşuluyla, en az 1 milyar TL büyüklüğündeki fonlar için yatırımcı sayısı
 50 şartından muafiyet eklendi (Bölüm 22).
 
+**BKY kritik düzeltmesi (bkz. Bölüm 23):** Bölüm 21.6'daki denetim
+adaylarından BKY resmî olarak doğrulandı. TEFAS'ın yaklaşık 50,49 değerinin
+A Grubu TL fiyatı olduğu; Yapı Kredi Portföy'ün kendi canlı endpoint'inde
+B Grubu native fiyatının 1,043073 USD olarak ayrı yayımlandığı kanıtlandı.
+BKY uygulamanın varsayılan Döviz fonu olduğu için bu hata hesaplamaları
+yaklaşık kur katsayısı kadar büyütüyordu. BKY mevcut pay-grubu override
+mekanizmasına eklendi, günlük fiyat artık doğrudan resmî Yapı Kredi Portföy
+kaynağından alınıyor ve fon başlangıcından bugüne doğrulanabilen 235 günlük
+USD geçmişi resmî seriyle değiştirildi. Ardışık iki canlı senkronizasyonla
+düzeltmenin kalıcı olduğu doğrulandı (commit `18732a5`).
+
 **Sonraki oturumda eklenenler (bkz. Bölüm 18):** Portföy Hesaplama akışı
 yeniden tasarlandı — "Risk Profili" combo box'ı kaldırılıp yerine, model
 dağılımından üretilen SVG donut grafikli seçilebilir risk profili
@@ -85,7 +96,10 @@ yazılmış sade SVG ikonlarla (pasta grafik / iç içe madeni para) değiştiri
 verdiği gerçek SVG dosyalarıyla (`src/assets/navigation/`) birebir
 değiştirildi (Bölüm 20, Bölüm 19'u supersede eder).
 
-Bilinen bloklayıcı bir sorun yoktur — **proje tamamlanmıştır.**
+BKY'nin varsayılan model fonunu etkileyen kritik fiyat sorunu çözülmüştür.
+Bölüm 21.6'da listelenen diğer döviz fonlarının fiyat/pay grubu denetimi ise
+uydurma veri üretmemek için resmî PYŞ kaynağı bulunana kadar açık bir veri
+kalitesi incelemesi olarak kalır; doğrulanmamış fonlar otomatik değiştirilmez.
 
 - **Canlı uygulama:** https://webappuygulamalar.github.io/fon-portfoy/
 - **GitHub deposu:** https://github.com/webappuygulamalar/fon-portfoy (public, `main`)
@@ -1203,7 +1217,7 @@ TEK verisi olan bir satır silinemez. Hiçbiri hiçbir fonun EN GÜNCEL
 fiyatı değildi (tümü geçmişte kalan tek bir tarihe ait), bu yüzden hiçbir
 fonun güncel fiyat gösterimini etkilemedi.
 
-### 21.6 Diğer USD/EUR katılım fonları — hızlı tutarlılık denetimi (DEĞİŞTİRİLMEDİ, yalnızca listelendi)
+### 21.6 Diğer USD/EUR katılım fonları — hızlı tutarlılık denetimi (BKY Bölüm 23'te düzeltildi)
 
 Kullanıcı talimatı gereği, CKS dışındaki fonlarda **doğrulama yapılmadan
 otomatik değişiklik yapılmadı**. Canlı veritabanı sorgulanarak CKS
@@ -1212,13 +1226,15 @@ dışında `currency IN ('USD','EUR')` olan **52 aktif fon** bulundu. Bunların
 AYNI büyüklük sınıfında (~15-170 "USD/EUR") — yani A Grubu/TL fiyatının
 yanlışlıkla native döviz fiyatı olarak kaydedilmiş OLABİLECEĞİ, ama tek
 tek resmi kaynaktan DOĞRULANMAMIŞ fonlar. Yalnızca TRU (1,54 USD) ve KIS
-(0,22 USD) zaten native döviz ölçeğinde görünüyor. Bunların **13'ünde**
-`risk_value` de CKS gibi null (KAP'ın pay-grubu-bazlı, para birimi
-etiketsiz metni nedeniyle muhtemelen aynı belirsizlik) — bu 13'ü en
-yüksek öncelikli admin inceleme adayı:
+(0,22 USD) zaten native döviz ölçeğinde görünüyor. İlk tarama anında
+bunların **14'ünde** `risk_value` de CKS gibi null'dı (KAP'ın
+pay-grubu-bazlı, para birimi etiketsiz metni nedeniyle muhtemelen aynı
+belirsizlik); BKY Bölüm 23 ile düzeltildikten sonra açık risk adayı sayısı
+13'e düştü:
 
 ```
-risk_value NULL (en yüksek öncelik): AL5, BDA, BKY, HML, KAV, KDL, KDO,
+risk_value NULL (2026-09-11 ilk tarama; BKY artık Bölüm 23 ile düzeltildi):
+  AL5, BDA, BKY, HML, KAV, KDL, KDO,
   KDT, KPD, KTT, NME, NVK, NZU, TRU
 risk_value mevcut ama fiyat büyüklüğü şüpheli (orta öncelik): DKL, KKC,
   KLS, NKA, PBK, ZP6, ZP9, EZM, KDK, KSL, KSM, MJE, OFA, OFK, KBZ, KMA,
@@ -1237,6 +1253,12 @@ TRU, DKL örnekleri) — yani bu etiket, hangi fonların CKS'nin sorununu
 paylaştığını ayırt etmek için GÜVENİLİR bir sinyal DEĞİLDİR; tek güvenilir
 yöntem, CKS'de yapıldığı gibi her fonun kendi resmi PYŞ sayfasıyla
 doğrudan karşılaştırmadır.
+
+**Güncel durum:** Bu ilk taramadaki BKY artık resmî KAP + Yapı Kredi
+Portföy verileriyle doğrulanıp Bölüm 23'te düzeltildi; risk değeri `3`,
+native USD fiyatı 1,043073'tür. Dolayısıyla şüpheli fiyat adayı sayısı
+49'dan **48'e** düşmüştür. Yukarıdaki liste ilk taramanın tarihsel kaydı
+olarak korunmuştur; BKY artık açık aday değildir.
 
 ### 21.7 Canlı doğrulama sonuçları
 
@@ -1304,9 +1326,77 @@ risk null + büyük fon yine uygun değil, BYF istisnası korunuyor, ve
 CKS'nin canlı senaryosunu (risk null → uygun değil, risk 3 → uygun)
 doğrulayan iki regresyon testi.
 
-## 23. Güncel Commit Geçmişi (en yeniden en eskiye, bu özetin kapsadığı aralık)
+## 23. BKY B Grubu Native USD Fiyat Düzeltmesi (2026-09-11)
+
+### 23.1 Resmî doğrulama ve kök neden
+
+Canlı veritabanında BKY `currency='USD'`, `risk_value=3` olmasına rağmen
+11.09.2026 fiyatı `50,491927 USD` görünüyordu. Yapı Kredi Portföy'ün resmî
+BKY sayfasının kullandığı JSON endpoint'i
+(`https://www.yapikrediportfoy.com.tr/getFundDetail/2125`) aynı yanıtta:
+
+- `Fon Birim Değeri (TL) = 50,491927 TL`,
+- `Fon Birim Değeri (USD) = 1,043073 USD`,
+- `Risk = 3/7` (TL pay grubu için ayrıca `otherRisk=6`)
+
+değerlerini döndürmektedir. KAP BKY genel bilgiler sayfası da A Grubu'nun
+TL, B Grubu'nun USD olduğunu ve B Grubu fiyatının A Grubu TL fiyatının TCMB
+USD alış kuruna bölünmesiyle hesaplandığını açıklar. Uygulama B Grubu USD
+payını takip ettiği için TEFAS'ın A Grubu TL sayısını USD olarak kaydetmesi,
+hesaplama motorunun bu değeri TCMB kuruyla yeniden çarpmasına ve yaklaşık 48
+kat fazla TL karşılığı üretmesine yol açıyordu.
+
+Bağımsız sayısal çapraz kontrol: 11.09.2026 resmî native fiyatı `1,043073`
+ile uygulamadaki son geçerli TCMB kuru `48,4069` çarpıldığında `50,491930 TL`
+elde edilir; Yapı Kredi'nin yayımladığı `50,491927 TL` ile yuvarlama düzeyinde
+eşleşir.
+
+### 23.2 Kalıcı günlük düzeltme
+
+Migration `20260911150000_bky_share_class_price_correction.sql`, BKY'yi mevcut
+`fund_share_class_overrides` mekanizmasına `B Grubu / USD /
+tefas_price_is_native=false` olarak ekler. Yeni `yapikredi_resmi_api` adapter'ı
+resmî endpoint'i POST ile çağırır; fon kodu `BKY`, `lastUpdateDate` ve açık
+`USD` son eki taşıyan `unitAmount.USD` alanı birlikte doğrulanmadan fiyat
+yazmaz. HTTP/JSON/alan hatasında tahmin yapılmaz ve TEFAS TL fiyatına geri
+düşülmez; o gün fiyat atlanıp son doğru değer korunur.
+
+BKY risk değeri `3`, `risk_source='kap_share_class_verified_manual'` ve
+`risk_verified=true` olarak mevcut `kap`-önekli senkronizasyon korumasına
+alındı. Para birimi kaynağı da günlük override tarafından
+`share_class_override:B Grubu` olarak korunur.
+
+### 23.3 Tarihsel fiyat düzeltmesi ve canlı kanıt
+
+Yapı Kredi Portföy'ün resmî fiyat grafiği, birbiriyle örtüşen 27 günlük özel
+tarih pencerelerinde çekildi. Fon başlangıcından 11.09.2026'ya kadar **235**
+native USD fiyat satırı bulundu; seri `0,999620–1,043073 USD` aralığındadır.
+Migration tüm eski, TL ölçeğindeki BKY fiyatlarını kaldırdı ve resmî seriyi
+`source='MANUAL'` + kaynak notuyla yazdı. Resmî kaynakta bulunmayan tek eski
+TEFAS tarihi (03.02.2026) tahmin edilmedi ve silindi. Mevcut tarihlerdeki fon
+büyüklüğü/yatırımcı sayısı metrikleri korundu.
+
+Canlıda iki ardışık `public.trigger_tefas_sync()` çalıştırıldı; ikisi de
+`success / 286 kontrol / 267 güncelleme / 0 başarısız / error_summary=null`
+ile bitti. İkinci çalıştırmadan sonra BKY:
+
+- `risk=3`, `currency=USD`, `currency_source=share_class_override:B Grubu`,
+- son fiyat `1,043073 USD`, `source=MANAGEMENT_COMPANY`,
+- fiyat geçmişi tam `235` satır, min/max `0,999620 / 1,043073`,
+- getiriler: 1 ay `%0,41`, 3 ay `%1,20`, YBB `%3,43`, 1 yıl `null`
+
+olarak kaldı. Böylece migration, günlük otomatik senkronizasyon ve idempotent
+ikinci çalışma birlikte doğrulanmıştır. Kod/migration commit'i: `18732a5`.
+
+Test sonucu: `managementCompanyPriceAdapter.test.ts` içindeki gerçek Yapı
+Kredi yanıt örneği dahil 16 adapter testi ve toplam **269/269** test geçti;
+lint 0 hata (önceden var olan 2 Fast Refresh uyarısı), typecheck, `deno check`
+ve production build temizdir.
+
+## 24. Güncel Commit Geçmişi (en yeniden en eskiye, bu özetin kapsadığı aralık)
 
 ```
+18732a5 BKY B Grubu USD fiyatını resmi kaynaktan düzelt
 554152c Nav ikonlarını tasarımcının verdiği gerçek SVG'lerle değiştir
 766115f Hesaplama/Fonlar nav ikonlarını emojiden sade SVG ikonlara çevir
 401734d Portföy Hesaplama akışını risk profili kartları + ayrı sonuç sayfasıyla yeniden tasarla
