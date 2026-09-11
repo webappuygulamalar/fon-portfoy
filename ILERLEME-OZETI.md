@@ -49,6 +49,27 @@ varsayılan sıralama 3 aylık getiriye (yüksekten düşüğe, eksik olan sonda
 çevrildi, ve mobildeki büyük/boşluklu fon kartları kompakt, sütunları
 hizalı bir tabloyla değiştirildi (Bölüm 17).
 
+**Bu oturumda eklenenler (bkz. Bölüm 21-22):** CKS (İş Portföy Birinci
+Katılım Serbest Döviz Fon) canlıda risk_value=null olduğu için
+listelerden gizliydi VE fiyatı kritik biçimde yanlıştı — B Grubu (native
+USD) yerine A Grubu'nun (TL) fiyatı, yanlışlıkla USD etiketiyle
+kaydediliyordu (~61,8 "USD" yerine gerçek ~1,28 USD). Her ikisi de KAP +
+İş Portföy'ün resmi sitesiyle çapraz doğrulanarak, kalıcı/korunan bir
+mekanizmayla (yeni `fund_share_class_overrides` tablosu + resmi PYŞ
+sayfasından günlük native fiyat çeken yeni bir adaptör) düzeltildi; CKS'nin
+tarihsel fiyat geçmişi de (yalnızca resmi kaynaktan doğrulanabilen aralıkta)
+düzeltildi (Bölüm 21). Bu süreçte, TAMAMEN AYRI ve daha geniş bir bulgu da
+ortaya çıktı: canlıda CKS dışındaki 52 aktif döviz katılım fonunun
+49'unun (fiyatı olan 51 fonun neredeyse tamamı) son fiyatı CKS'nin eski
+hatasıyla AYNI büyüklük sınıfında (~15-170 "USD/EUR") — resmi kaynaklarla
+doğrulanmadan değiştirilmedi, admin incelemesi için Bölüm 21'de listelendi.
+Ayrıca canlıda 52 fonun fiyat geçmişinde 2026-09-04 tarihli, tek seferlik,
+yanlış para birimli "başıboş" satırlar bulundu ve (her fon için o tarihte
+zaten doğru para biriminde bir kardeş satır bulunduğu doğrulanarak)
+temizlendi. Ortak fon listeleme kuralına, risk değeri doğrulanmış olmak
+koşuluyla, en az 1 milyar TL büyüklüğündeki fonlar için yatırımcı sayısı
+50 şartından muafiyet eklendi (Bölüm 22).
+
 **Sonraki oturumda eklenenler (bkz. Bölüm 18):** Portföy Hesaplama akışı
 yeniden tasarlandı — "Risk Profili" combo box'ı kaldırılıp yerine, model
 dağılımından üretilen SVG donut grafikli seçilebilir risk profili
@@ -1044,7 +1065,246 @@ yatay taşma yok, ikon boyutu tam istenen değerlerde (27x27 / 22x22),
 `viewBox="0 0 32 32"` korunmuş, renk aktifte `rgb(46,217,168)` (mint),
 pasifte mevcut muted ton, konsol hatası yok. Commit `554152c`.
 
-## 21. Güncel Commit Geçmişi (en yeniden en eskiye, bu özetin kapsadığı aralık)
+## 21. CKS Risk/Pay Grubu/Fiyat Düzeltmesi ve Diğer Döviz Fonları Denetimi (2026-09-11)
+
+### 21.1 Sorun
+
+Canlı kayıtta CKS (İş Portföy Birinci Katılım Serbest (Döviz) Fon)
+mevcut ve aktif, ama iki bağımsız sorunu vardı:
+
+1. **Listelerden gizli:** `risk_value=null` olduğu için ortak listeleme
+   filtresi (`isFundEligibleForListing`) onu Fonlar sayfasından ve fon
+   değiştirme ekranından eliyordu.
+2. **Kritik fiyat hatası:** Son fiyatı ~61,8 "USD" görünüyordu. Bu, TEFAS'ın
+   toplu liste endpoint'inin CKS için döndürdüğü ham `fiyat` alanının
+   (A Grubu/TL fiyatı) yanlışlıkla `currency='USD'` etiketiyle
+   kaydedilmesinden kaynaklanıyordu — gerçek B Grubu (native USD) fiyatı
+   ~1,28 USD'dir. Bu, TL karşılığı hesaplanırken (native fiyat × TCMB
+   kuru) ~48 kat büyüklüğünde bir hataya yol açardı.
+
+### 21.2 Doğrulama — kaynaklar ve çapraz kontrol
+
+Üç bağımsız resmi kaynak canlı olarak sorgulandı ve birbiriyle tutarlı
+çıktı:
+
+- **KAP genel bilgiler sayfası**
+  (`https://www.kap.org.tr/tr/fon-bilgileri/genel/4028328d86d233bf01877fb5e99d3c51`):
+  "Fonun Yatırım Amacı veya Stratejisi" alanında, para birimi etiketi
+  OLMADAN, "A Grubu Paylar: 5 / B Grubu Paylar: 3" metni. Ayrıca A Grubu
+  = TL, B Grubu = USD bilgisini taşıyor. (kap-risk-sync bu metni daha
+  önce doğru şekilde "belirsiz" sayıp risk_value yazmamıştı — bkz.
+  `kapRiskParser.ts` `resolveByCurrency`, yalnızca para birimi KELİMESİ
+  geçen adayları çözer, salt "A/B grubu" harfini otomatik bir para
+  birimine eşlemez; bu GENEL kural bilerek gevşetilmedi, bkz. 21.6.)
+- **İş Portföy'ün resmi CKS (USD) sayfası**
+  (`https://www.isportfoy.com.tr/is-portfoy-birinci-katilim-serbest-doviz-fon-usd`):
+  "Risk Seviyesi: 3/7" (KAP'ın B Grubu değeriyle birebir), "Fon Birim
+  Fiyatı (USD)" alanında 11.09.2026 için 1,277608, fon büyüklüğü
+  5.855.446.639,71 TL (canlı DB ile birebir eşleşiyor).
+- **TEFAS'ın kendisi** (`tefas.gov.tr`, hem toplu liste API'si hem
+  FonAnaliz sayfası): CKS için döndürdüğü fiyatı KENDİSİ "TL" etiketiyle
+  gösteriyor (11.09.2026: 61,845028 TL) — B Grubu'na özgü ayrı bir USD
+  fiyat alanı YOK. Yani TEFAS'ın kendi arayüzü bile bu sayının TL olduğunu
+  doğruluyor; hata TEFAS'ın verisinde değil, uygulamanın bu ham sayıyı
+  sorgusuzca "native USD" varsaymasındaydı.
+
+### 21.3 Kalıcı düzeltme — genel pay-grubu/fiyat-kaynağı mekanizması
+
+Tek seferlik/korunmayan bir `UPDATE` yerine, iki parçalı, kalıcı bir
+mekanizma kuruldu:
+
+**a) Risk değeri** — mevcut, canlıda kanıtlanmış korumayı (bkz. Bölüm
+12.5) aynen kullanır: `funds.risk_value=3`, `risk_source` `'kap'` ile
+başlıyor (`kap_share_class_verified_manual`), `risk_verified=true`,
+`risk_verification_needed=false`. `shouldSkipReferenceCatalogRisk`
+(`classifyFund.ts`) bu satırı her tefas-sync çalıştırmasında otomatik
+korur — yeni kod YAZILMADI, var olan mekanizma yeniden kullanıldı.
+
+**b) Para birimi + fiyat kaynağı** — yeni `fund_share_class_overrides`
+tablosu (migration `20260911130000_fund_share_class_price_overrides.sql`):
+fon kodu, pay grubu etiketi, native para birimi, `tefas_price_is_native`
+(false = TEFAS'ın ham fiyatı BAŞKA pay grubuna ait, hiç kullanılmasın),
+fiyat kaynağı (kod + URL), doğrulama kaynağı/notu. `tefas-sync/index.ts`
+her çalıştırmada bu tabloyu okur ve aktif satırları referans katalog/
+başlık sezgisinin ÖNÜNE geçirir (`shareClassOverride.ts`,
+`resolveFundCurrency`/`shouldTrustTefasPrice` — saf, test edilebilir
+fonksiyonlar). `tefas_price_is_native=false` olan fonlar için TEFAS'ın
+fiyatı fund_prices'a HİÇ yazılmaz; bunun yerine yeni bir adaptör
+(`managementCompanyPriceAdapter.ts`) resmi PYŞ sayfasından günlük native
+fiyatı çeker (`fund_prices.source='MANAGEMENT_COMPANY'`, yeni enum
+değeri). İş Portföy'ün fon sayfası düz, sunucu tarafında render edilmiş
+HTML'dir (TEFAS'ın aksine bot koruması YOK) — "Fon Birim Fiyatı (USD)"
+etiketinin yanındaki tarih+değeri ayrıştırır. **Çekim başarısız olursa
+(ağ hatası veya sayfa yapısı beklenmedikse) HİÇBİR SAYI UYDURULMAZ** — o
+fonun fiyatı o çalıştırmada atlanır, son bilinen değer korunur,
+`sync_runs.error_summary`'ye insan-okunur bir not düşülür.
+
+`history-backfill` fonksiyonu da aynı tabloyu okuyup
+`tefas_price_is_native=false` olan fon kodlarını tarihsel yüklemeden
+tamamen dışlayacak şekilde güncellendi — aksi halde checkpoint bir gün
+sıfırlanıp yeniden çalıştırılırsa CKS'nin (ya da gelecekte eklenecek
+başka bir override fonunun) düzeltilmiş geçmişini sessizce yeniden
+bozabilirdi.
+
+Bu tasarım kasıtlı olarak CKS'ye özgü değildir — ileride aynı sorunu
+yaşayan başka bir fon bulunursa, yeni kod yazmadan, yalnızca
+`fund_share_class_overrides`'a bir satır ekleyerek (ve gerekirse
+`managementCompanyPriceAdapter.ts`'e o PYŞ'nin sayfa yapısı için yeni bir
+`SOURCE_PARSERS` girişi ekleyerek) çözülebilir.
+
+### 21.4 Tarihsel fiyat düzeltmesi — kapsam ve sınır
+
+Migration `20260911130100_cks_price_history_correction.sql`. CKS'nin
+`fund_prices` geçmişi (261 satır, 2025-09-01 – 2026-09-11) baştan sona bu
+hatayı taşıyordu. İş Portföy'ün resmi sayfası yalnızca son ~1 aylık
+(14.08.2026 – 11.09.2026, 21 iş günü) native USD fiyatı, sayfaya gömülü
+bir grafik verisi (dataset etiketi "CKS - USD") üzerinden, tam hassasiyetle
+sağlıyordu — bu 21 gün gerçek verilerle düzeltildi (`source='MANUAL'`,
+kaynağa atıfla). **2025-09-01 – 2026-08-13 için resmi/doğrulanabilir bir
+B Grubu USD kaynağı bulunamadı** (İş Portföy'ün sitesinde daha uzun bir
+resmi geçmiş API'si/tablosu tespit edilemedi; TEFAS bu veriyi hiç
+taşımıyor). Kullanıcı talimatı gereği ("veri kaynağı bulunamazsa uydurma
+veya kurdan geriye dönük tahmin üretme") bu ~242 günlük aralık ne
+uydurulmadı ne de A Grubu TL fiyatı / güncel TCMB kuruyla geriye dönük
+tahmin edilmedi — **silindi**. Gerekçe: yanlış (TL ölçeğinde) bir "USD"
+fiyatını olduğu gibi bırakmak, doğru son fiyatla (1,28 USD) birleştiğinde
+getiri hesaplarında (`fund_returns`) sahte, çok büyük bir kayıp/kazanç
+sıçraması üretirdi; `fund_price_on_or_before`/`fund_returns` eksik
+geçmişi zaten güvenle null/"—" olarak ele alıyor (yeni eklenen bir fon
+için de geçerli olan, halihazırda test edilmiş yol). **Bilinen sonuç:**
+CKS'nin 3/6 aylık ve 1 yıllık getirisi, yeterli doğrulanmış geçmiş
+birikene kadar (birkaç ay) Fonlar sayfasında "—" gösterecek; YANLIŞ bir
+yüzde göstermeyecek. Daha uzun resmi bir geçmiş kaynağı bulunursa ayrı
+bir migration ile eklenebilir.
+
+### 21.5 Bonus bulgu — 52 fonda tek seferlik "başıboş" fiyat satırı (temizlendi)
+
+CKS'nin geçmişi incelenirken, `fund_prices.currency`'nin `funds.currency`
+ile UYUŞMADIĞI, beklenmedik bir satır bulundu: 2026-09-04 tarihli,
+`currency='TRY'`, `source='TEFAS'`, `fetched_at≈2026-09-06 07:52 UTC`.
+Canlı veritabanı tam taranarak bunun CKS'ye özgü olmadığı, AYNI desende
+(tek satır, aynı tarih, aynı `fetched_at` civarı, fonun güncel para
+biriminden farklı) **tam 52 fonu** etkilediği doğrulandı — büyük
+olasılıkla 09-06 sabahı, döviz fonlarının bir kısmı için henüz TL
+varsayılanından USD/EUR'a geçiş tamamlanmadan çalışmış bir senkronizasyonun
+kalıntısı (bkz. Bölüm 9, `20260906090000_fund_risk_currency_metadata.sql`
+"acil düzeltme" notu). Bu, "hangi pay grubu native" BELİRSİZLİĞİ değil
+(admin incelemesi gerektiren bir konu), mekanik olarak kanıtlanmış bir
+kopya/kalıntı satırdı: her etkilenen fon için o TARİHTE fonun GÜNCEL
+(doğru) para biriminde bir kardeş satır zaten mevcuttu. `fund_price_on_
+or_before` para birimine bakmadan yalnızca tarihe göre en yakın satırı
+seçtiğinden, aynı tarihte iki para birimli satır varlığı getiri
+hesaplarında TANIMSIZ/yanlış bir sonuca yol açabilirdi. Migration
+`20260911140000_stray_currency_price_row_cleanup.sql`, YALNIZCA bu kanıtlanmış
+deseni (aynı tarih + fonun güncel para biriminden farklı + o tarihte
+zaten doğru para biriminde bir kardeş satır VAR) silen, kendi kendini
+doğrulayan bir `delete ... where exists (...)` kullanır — hiçbir fonun
+TEK verisi olan bir satır silinemez. Hiçbiri hiçbir fonun EN GÜNCEL
+fiyatı değildi (tümü geçmişte kalan tek bir tarihe ait), bu yüzden hiçbir
+fonun güncel fiyat gösterimini etkilemedi.
+
+### 21.6 Diğer USD/EUR katılım fonları — hızlı tutarlılık denetimi (DEĞİŞTİRİLMEDİ, yalnızca listelendi)
+
+Kullanıcı talimatı gereği, CKS dışındaki fonlarda **doğrulama yapılmadan
+otomatik değişiklik yapılmadı**. Canlı veritabanı sorgulanarak CKS
+dışında `currency IN ('USD','EUR')` olan **52 aktif fon** bulundu. Bunların
+**49'unun** (fiyatı olan 51 fonun %96'sı) son fiyatı CKS'nin eski hatasıyla
+AYNI büyüklük sınıfında (~15-170 "USD/EUR") — yani A Grubu/TL fiyatının
+yanlışlıkla native döviz fiyatı olarak kaydedilmiş OLABİLECEĞİ, ama tek
+tek resmi kaynaktan DOĞRULANMAMIŞ fonlar. Yalnızca TRU (1,54 USD) ve KIS
+(0,22 USD) zaten native döviz ölçeğinde görünüyor. Bunların **13'ünde**
+`risk_value` de CKS gibi null (KAP'ın pay-grubu-bazlı, para birimi
+etiketsiz metni nedeniyle muhtemelen aynı belirsizlik) — bu 13'ü en
+yüksek öncelikli admin inceleme adayı:
+
+```
+risk_value NULL (en yüksek öncelik): AL5, BDA, BKY, HML, KAV, KDL, KDO,
+  KDT, KPD, KTT, NME, NVK, NZU, TRU
+risk_value mevcut ama fiyat büyüklüğü şüpheli (orta öncelik): DKL, KKC,
+  KLS, NKA, PBK, ZP6, ZP9, EZM, KDK, KSL, KSM, MJE, OFA, OFK, KBZ, KMA,
+  KTE, KLL, YSL, ZDK, URD, ZKK, KEU, KHU, KKE, TPZ, ZPF, ZSK, KDS, KDV,
+  KDZ, KKB, KSC, ZAD, ZK1, ZK2
+```
+
+**Bu bir kanıt değil, bir tarama sonucudur** — büyüklük tek başına
+kanıtlayıcı değildir (bazı fonlar gerçekten yüksek nominal değerli
+paylarla başlamış olabilir). Her biri, CKS'de yapıldığı gibi, fonun
+kendi resmi PYŞ sayfasıyla tek tek doğrulanmadan `fund_share_class_
+overrides`'a eklenmemeli veya fiyatı değiştirilmemelidir. TEFAS'ın kendi
+FonAnaliz sayfasının TÜM fonlar için (native para birimi ne olursa
+olsun) fiyatı hep "(TL)" etiketiyle gösterdiği canlıda doğrulandı (BKY,
+TRU, DKL örnekleri) — yani bu etiket, hangi fonların CKS'nin sorununu
+paylaştığını ayırt etmek için GÜVENİLİR bir sinyal DEĞİLDİR; tek güvenilir
+yöntem, CKS'de yapıldığı gibi her fonun kendi resmi PYŞ sayfasıyla
+doğrudan karşılaştırmadır.
+
+### 21.7 Canlı doğrulama sonuçları
+
+Migration'lar canlıya uygulandıktan, Edge Function'lar (`tefas-sync`,
+`history-backfill`) deploy edildikten sonra:
+
+- `tefas-sync` **ardışık iki kez** canlıda tetiklendi (`select public.
+  trigger_tefas_sync();`); ikisi de `status=success`, `error_summary=null`
+  ile tamamlandı. İkinci çalıştırmadan sonra CKS'nin `risk_value=3`,
+  `currency='USD'`, `currency_source='share_class_override:B Grubu'`
+  değişmeden kaldığı, fiyat satırının (2026-09-11, 1,277608 USD,
+  `source='MANAGEMENT_COMPANY'`) tekrarlanmadan (idempotent upsert)
+  güncel kaldığı doğrulandı — toplam satır sayısı hâlâ tam 21.
+- Gerçek Chromium'da (Playwright), canlı Supabase projesine bağlı yerel
+  dev sunucusu üzerinden: Fonlar sayfasında "CKS" araması sonuç veriyor;
+  satırda Risk=3, Para birimi=USD, Son fiyat≈1,28 (11.09.2026), Büyüklük=
+  5.855.446.639,71, Yatırımcı=2.385 gösteriliyor; 1/3 ay ve 1 yıl
+  getirileri "—" (beklenen, bkz. 21.4). `/fon-degistir/FX` sayfasında CKS
+  "Bu fonu seç" ile seçilebilir durumda listeleniyor. Hesaplama akışında
+  Orta profili + 100.000 TL ile, Döviz kalemi CKS'ye değiştirilip yeniden
+  hesaplandığında: "Native fiyat: 1,28 USD / 61,85 TL (yaklaşık TL
+  karşılığı) / 1 USD = 48,41 TL (TCMB, 10.09.2026)" gösterildi — bağımsız
+  olarak 1,277608 × 48,4069 ≈ 61,84 TL ile eşleşiyor (tek çarpım, çifte
+  dönüşüm yok); pay adedi (161) ve hesaplanan tutar (₺9.957,05) bu birim
+  fiyatla tutarlı. Tarayıcı konsolunda hata yok.
+
+### 21.8 Yeni/değiştirilen dosyalar
+
+- `supabase/migrations/20260911130000_fund_share_class_price_overrides.sql`
+- `supabase/migrations/20260911130100_cks_price_history_correction.sql`
+- `supabase/migrations/20260911140000_stray_currency_price_row_cleanup.sql`
+- `supabase/functions/tefas-sync/shareClassOverride.ts` (yeni, saf/test edilebilir)
+- `supabase/functions/tefas-sync/managementCompanyPriceAdapter.ts` (yeni)
+- `supabase/functions/tefas-sync/types.ts` (`ShareClassOverride` eklendi)
+- `supabase/functions/tefas-sync/index.ts` (override okuma + uygulama)
+- `supabase/functions/history-backfill/index.ts` (override fonlarını dışlama)
+- Testler: `shareClassOverride.test.ts`, `managementCompanyPriceAdapter.test.ts`,
+  `engine.test.ts`'e 2 yeni çift-dönüşüm regresyon testi.
+
+## 22. Büyük Fon Listeleme İstisnası (2026-09-11)
+
+Ortak `isFundEligibleForListing` kuralına (Bölüm 13), kullanıcı kararıyla
+**1.000.000.000 TL (dahil)** eşiği için bir istisna eklendi:
+`src/domain/calculation/fundListingEligibility.ts`. Önceki kural
+"risk_value biliniyor VE (yatırımcı sayısı bilinmiyor VEYA ≥50 VEYA
+BYF)" idi; artık "büyüklük ≥ 1 milyar TL" dördüncü bir OR-koşulu olarak
+eklendi. Risk değeri null olan bir fon, büyüklüğü ne olursa olsun (100
+milyar TL dahi) HÂLÂ gösterilmez — bu şart değişmedi. `fund_size` null
+ise istisna uygulanmaz (büyüklüğü bilinmeyen bir fon "büyük" varsayılıp
+muaf tutulmaz). Mevcut BYF istisnası korundu.
+
+`FundListingCandidate` arayüzüne `fundSize: number | null` alanı eklendi;
+her iki çağrı noktası da (`useFundsExplorer.ts` — zaten `FundExplorerRow.
+fundSize` taşıyordu; `AdminModelEditorPage.tsx`'teki model uyarısı —
+`latestPrice.fund_size`'dan `Number(...)` ile türetildi) güncellendi.
+Fonlar kataloğu ve fon değiştirme sayfası aynı merkezi `useFundsExplorer`
+hook'unu (dolayısıyla aynı kuralı) kullanmaya devam ediyor; fon
+değiştirme sayfasındaki ayrı `is_substitution_eligible`/aynı-varlık-sınıfı
+kısıtları hiç değişmedi. Bu yalnızca gösterim/seçim katmanında bir
+filtredir — hiçbir fon veritabanından silinmedi.
+
+14 yeni/güncellenmiş test eklendi (`fundListingEligibility.test.ts`):
+sınır (tam 1 milyar dahil, 1 TL altı hariç), `fund_size=null` istisnasız,
+risk null + büyük fon yine uygun değil, BYF istisnası korunuyor, ve
+CKS'nin canlı senaryosunu (risk null → uygun değil, risk 3 → uygun)
+doğrulayan iki regresyon testi.
+
+## 23. Güncel Commit Geçmişi (en yeniden en eskiye, bu özetin kapsadığı aralık)
 
 ```
 554152c Nav ikonlarını tasarımcının verdiği gerçek SVG'lerle değiştir

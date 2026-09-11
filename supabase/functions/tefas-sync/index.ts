@@ -19,6 +19,9 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 import { classifyFund, shouldSkipReferenceCatalogRisk, type FundClassification } from "./classifyFund.ts";
 import { fetchAllParticipationFunds } from "./tefasAdapter.ts";
 import { fetchTcmbRates } from "./fxRateAdapter.ts";
+import { fetchManagementCompanyPrice } from "./managementCompanyPriceAdapter.ts";
+import { resolveFundCurrency, shouldTrustTefasPrice } from "./shareClassOverride.ts";
+import type { ShareClassOverride } from "./types.ts";
 import { CORS_HEADERS, jsonResponse } from "../_shared/jsonResponse.ts";
 import { authenticateSyncRequest } from "../_shared/authenticateSyncRequest.ts";
 
@@ -171,20 +174,58 @@ Deno.serve(async (req: Request) => {
       }
     }
 
+    // Pay grubu geçersiz kılmaları (bkz. fund_share_class_overrides,
+    // 20260911130000_fund_share_class_price_overrides.sql): birden fazla
+    // pay grubuna sahip fonlar için doğrulanmış native para birimi/fiyat
+    // kaynağı. Aktif bir satırı olan fon kodu için currency/currency_source
+    // HER ÇALIŞTIRMADA bu tablodan zorla uygulanır (referans katalog/başlık
+    // sezgisinden DEĞİL) — böylece günlük senkronizasyon bu değeri asla
+    // eski/yanlış bir değere geri düşürmez. tefas_price_is_native=false
+    // olan fonlar için TEFAS'ın ham fiyatı hiç kullanılmaz (bkz. aşağıdaki
+    // fiyat çekimi bloğu).
+    const overrideByCode = new Map<string, ShareClassOverride>();
+    {
+      const { data, error } = await admin
+        .from("fund_share_class_overrides")
+        .select(
+          "fund_code, share_class_label, native_currency, tefas_price_is_native, price_fetch_source, price_fetch_url",
+        )
+        .eq("is_active", true);
+      if (error) {
+        errors.push(`fund_share_class_overrides okunamadı: ${error.message}`);
+      } else {
+        for (const row of data ?? []) {
+          overrideByCode.set(row.fund_code as string, {
+            fundCode: row.fund_code as string,
+            shareClassLabel: row.share_class_label as string,
+            nativeCurrency: row.native_currency as "TRY" | "USD" | "EUR",
+            tefasPriceIsNative: row.tefas_price_is_native as boolean,
+            priceFetchSource: row.price_fetch_source as string | null,
+            priceFetchUrl: row.price_fetch_url as string | null,
+          });
+        }
+      }
+    }
+
     const nowIso = new Date().toISOString();
     const fundRowsWithRisk: (FundUpsertRowBase & RiskFields)[] = [];
     const fundRowsWithoutRisk: FundUpsertRowBase[] = [];
 
     for (const f of catalog) {
       const classification = classificationByCode.get(f.code)!;
+      const override = overrideByCode.get(f.code);
+      const resolvedCurrency = resolveFundCurrency(
+        { currency: classification.currency, currencySource: classification.currencySource },
+        override,
+      );
       const base: FundUpsertRowBase = {
         code: f.code,
         name: f.displayName,
         management_company: f.managementCompany,
         asset_class: classification.modelAssetClass,
         fund_type: f.fonTipi === "YAT" ? "Yatırım Fonu" : "Borsa Yatırım Fonu",
-        currency: classification.currency,
-        currency_source: classification.currencySource,
+        currency: resolvedCurrency.currency,
+        currency_source: resolvedCurrency.currencySource,
         tefas_fetch_code: f.code,
         is_active: true,
         verification_needed: classification.needsVerification,
@@ -238,19 +279,87 @@ Deno.serve(async (req: Request) => {
     // atlanır. `currency` fonun native para birimidir (ör. BKY için USD) —
     // fiyat DEĞERİ zaten TEFAS'ın döndürdüğü native sayıdır, TL'ye
     // ÇEVRİLMEZ; TL karşılığı hesaplama anında (fx_rates ile) türetilir.
+    //
+    // İSTİSNA: tefas_price_is_native=false olan bir override'a sahip fonlar
+    // için (bkz. overrideByCode yukarıda) TEFAS'ın ham fiyatı BAŞKA bir pay
+    // grubuna ait olduğu doğrulandığından hiç kullanılmaz — bunun yerine
+    // resmi PYŞ kaynağından (bkz. managementCompanyPriceAdapter.ts) o günün
+    // native fiyatı çekilir. Çekim başarısız olursa (ağ hatası veya sayfa
+    // yapısı beklenmedikse) o fon için o günün fiyatı UYDURULMAZ — bu
+    // çalıştırmada atlanır, son bilinen değer korunur, hata error_summary'ye
+    // yazılır.
+    const overrideFetchFunds = catalog.filter((f) => !shouldTrustTefasPrice(overrideByCode.get(f.code)));
+    const managementCompanyPriceByCode = new Map<string, { price: number; priceDate: string }>();
+    const overrideFetchResults = await Promise.allSettled(
+      overrideFetchFunds.map((f) => fetchManagementCompanyPrice(overrideByCode.get(f.code)!)),
+    );
+    overrideFetchResults.forEach((result, i) => {
+      const code = overrideFetchFunds[i].code;
+      if (result.status === "rejected") {
+        const message = result.reason instanceof Error ? result.reason.message : String(result.reason);
+        errors.push(`Resmi PYŞ fiyatı alınamadı (${code}): ${message}`);
+        return;
+      }
+      if (result.value === null) {
+        errors.push(
+          `Resmi PYŞ sayfasında beklenen fiyat alanı bulunamadı (${code}) — bu fon için fiyat bu çalıştırmada güncellenmedi.`,
+        );
+        return;
+      }
+      managementCompanyPriceByCode.set(code, result.value);
+    });
+
+    interface PriceUpsertRow {
+      fund_id: string;
+      price_date: string;
+      currency: "TRY" | "USD" | "EUR";
+      price: number;
+      fund_size: number | null;
+      investor_count: number | null;
+      source: "TEFAS" | "MANAGEMENT_COMPANY";
+      fetched_at: string;
+      note: string | null;
+    }
+
     const priceRows = catalog
-      .filter((f) => fundIdByCode.has(f.code) && f.price > 0)
-      .map((f) => ({
-        fund_id: fundIdByCode.get(f.code)!,
-        price_date: f.priceDate,
-        currency: classificationByCode.get(f.code)!.currency,
-        price: f.price,
-        fund_size: f.fundSize,
-        investor_count: f.investorCount,
-        source: "TEFAS",
-        fetched_at: nowIso,
-        note: null,
-      }));
+      .filter((f) => fundIdByCode.has(f.code))
+      .flatMap((f): PriceUpsertRow[] => {
+        const override = overrideByCode.get(f.code);
+        const currency = override ? override.nativeCurrency : classificationByCode.get(f.code)!.currency;
+
+        if (override && !shouldTrustTefasPrice(override)) {
+          const fetched = managementCompanyPriceByCode.get(f.code);
+          if (!fetched) return [];
+          return [
+            {
+              fund_id: fundIdByCode.get(f.code)!,
+              price_date: fetched.priceDate,
+              currency,
+              price: fetched.price,
+              fund_size: f.fundSize,
+              investor_count: f.investorCount,
+              source: "MANAGEMENT_COMPANY",
+              fetched_at: nowIso,
+              note: `Kaynak: ${override.priceFetchSource} (fund_share_class_overrides, ${override.shareClassLabel})`,
+            },
+          ];
+        }
+
+        if (f.price <= 0) return [];
+        return [
+          {
+            fund_id: fundIdByCode.get(f.code)!,
+            price_date: f.priceDate,
+            currency,
+            price: f.price,
+            fund_size: f.fundSize,
+            investor_count: f.investorCount,
+            source: "TEFAS",
+            fetched_at: nowIso,
+            note: null,
+          },
+        ];
+      });
 
     for (let i = 0; i < priceRows.length; i += UPSERT_BATCH_SIZE) {
       const batch = priceRows.slice(i, i + UPSERT_BATCH_SIZE);

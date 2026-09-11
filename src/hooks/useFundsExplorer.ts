@@ -88,7 +88,12 @@ export function useFundsExplorer(): UseFundsExplorerResult {
 
         setRows(
           explorerRows.filter((r) =>
-            isFundEligibleForListing({ riskValue: r.riskValue, investorCount: r.investorCount, fundType: r.fundType }),
+            isFundEligibleForListing({
+              riskValue: r.riskValue,
+              investorCount: r.investorCount,
+              fundType: r.fundType,
+              fundSize: r.fundSize,
+            }),
           ),
         );
       } catch (err) {

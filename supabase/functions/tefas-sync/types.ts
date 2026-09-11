@@ -45,3 +45,18 @@ export interface ParsedCatalogFund {
   fundSize: number | null;
   investorCount: number | null;
 }
+
+/**
+ * `fund_share_class_overrides` tablosunun bir satırı (bkz.
+ * 20260911130000_fund_share_class_price_overrides.sql) — çoklu pay
+ * grubuna sahip bir fon için doğrulanmış native para birimi/fiyat kaynağı.
+ */
+export interface ShareClassOverride {
+  fundCode: string;
+  shareClassLabel: string;
+  nativeCurrency: "TRY" | "USD" | "EUR";
+  /** true: TEFAS'ın ham fiyatı bu pay grubuna aittir. false: değildir, kullanılmamalıdır. */
+  tefasPriceIsNative: boolean;
+  priceFetchSource: string | null;
+  priceFetchUrl: string | null;
+}

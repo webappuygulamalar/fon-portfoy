@@ -109,10 +109,12 @@ export function AdminModelEditorPage() {
       if (!fundId) continue;
       const fund = funds.find((f) => f.id === fundId);
       if (!fund) continue;
+      const latestPrice = latestPriceByFundId.get(fundId);
       const eligible = isFundEligibleForListing({
         riskValue: fund.risk_value,
-        investorCount: latestPriceByFundId.get(fundId)?.investor_count ?? null,
+        investorCount: latestPrice?.investor_count ?? null,
         fundType: fund.fund_type,
+        fundSize: latestPrice?.fund_size ? Number(latestPrice.fund_size) : null,
       });
       if (!eligible) result[ac] = fund;
     }

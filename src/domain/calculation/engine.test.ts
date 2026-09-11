@@ -239,6 +239,69 @@ describe("calculatePortfolio — döviz cinsinden fiyatlanan fon", () => {
     expect(fx.fxRateUsed?.rate.toNumber()).toBe(13);
     expect(fx.fxRateUsed?.source).toBe("TCMB");
   });
+
+  it("native USD fiyatı TL'ye YALNIZCA BİR KEZ çevrilir (CKS'de yaşanan çift dönüşüm hatasının regresyon testi)", () => {
+    // CKS'nin canlıda düzeltilen hatası: TEFAS'ın A Grubu (TL) fiyatı
+    // yanlışlıkla currency='USD' etiketiyle kaydedilmişti; bu, doğru native
+    // USD fiyatı TL karşılığına çevrilirken sanki zaten TL'ymiş gibi
+    // (kur uygulanmadan) kullanılsaydı ya da tersine iki kez kurla
+    // çarpılsaydı ortaya çıkacak sınıf hatasını temsil eder. resolvePrice
+    // (engine.ts) her fon için TAM OLARAK bir dal çalıştırır (TRY: olduğu
+    // gibi | değilse: price * rate, tek sefer) — burada gerçek CKS
+    // büyüklüğünde sayılarla bunu doğrudan doğrular.
+    const input: PortfolioCalculationInput = {
+      totalAmount: 10_000,
+      allocations: dusuk2.allocations,
+      now: NOW,
+      fundPrices: {
+        BIST_EQUITY: priceInput("BIST_EQUITY", "ZKP", 7),
+        GOLD: priceInput("GOLD", "ZGD", 11),
+        FX: {
+          fundId: "fund-CKS",
+          fundCode: "CKS",
+          assetClass: "FX",
+          price: 1.277608,
+          currency: "USD",
+          priceDate: "2026-09-11",
+          fetchedAt: "2026-09-11T05:30:00Z",
+        },
+        MONEY_MARKET: priceInput("MONEY_MARKET", "PKT", 5),
+      },
+      fxRates: [{ currency: "USD", rateToTry: 48.5, rateDate: "2026-09-11", source: "TCMB" }],
+    };
+    const result = calculatePortfolio(input);
+    expect(result.status).toBe("OK");
+    const fx = result.fundLines.find((l) => l.assetClass === "FX")!;
+    // 1.277608 * 48.5 — tek çarpım, ne daha az (kur hiç uygulanmamış) ne
+    // daha fazla (iki kez uygulanmış) bir sonuç.
+    expect(fx.unitPriceTRY.toNumber()).toBeCloseTo(1.277608 * 48.5, 6);
+    expect(fx.originalPrice.toNumber()).toBe(1.277608);
+    expect(fx.originalCurrency).toBe("USD");
+  });
+
+  it("TRY fiyatlı bir fon, fxRates'te alakasız bir kur bulunsa bile TEKRAR çevrilmez", () => {
+    // resolvePrice'ın currency==='TRY' dalı fiyatı OLDUĞU GİBİ döner — bu
+    // test, fxRates dizisinde bir USD kuru mevcut olsa bile TRY fiyatlı bir
+    // fonun buna hiç dokunmadığını (çift dönüşüm/istenmeyen çarpım
+    // olmadığını) doğrudan kanıtlar.
+    const input: PortfolioCalculationInput = {
+      totalAmount: 10_000,
+      allocations: dusuk2.allocations,
+      now: NOW,
+      fundPrices: {
+        BIST_EQUITY: priceInput("BIST_EQUITY", "ZKP", 7),
+        GOLD: priceInput("GOLD", "ZGD", 11),
+        FX: priceInput("FX", "BKY", 13),
+        MONEY_MARKET: priceInput("MONEY_MARKET", "PKT", 5),
+      },
+      fxRates: [{ currency: "USD", rateToTry: 48.5, rateDate: "2026-09-11", source: "TCMB" }],
+    };
+    const result = calculatePortfolio(input);
+    expect(result.status).toBe("OK");
+    const fx = result.fundLines.find((l) => l.assetClass === "FX")!;
+    expect(fx.unitPriceTRY.toNumber()).toBe(13);
+    expect(fx.fxRateUsed).toBeUndefined();
+  });
 });
 
 describe("calculatePortfolio — geçersiz model dağılımı", () => {

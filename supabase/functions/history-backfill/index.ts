@@ -130,9 +130,30 @@ Deno.serve(async (req: Request) => {
       }
     }
 
+    // Pay grubu geçersiz kılması olan VE TEFAS'ın ham fiyatının native
+    // OLMADIĞI fon kodları (bkz. fund_share_class_overrides, 20260911130000_
+    // fund_share_class_price_overrides.sql — ör. CKS): bu fonksiyon yalnızca
+    // TEFAS'ın toplu geçmiş verisini yazar ve resmi PYŞ kaynağından tarihsel
+    // fiyat ÇEKEMEZ (bkz. tefas-sync/managementCompanyPriceAdapter.ts — o
+    // yalnızca GÜNCEL fiyatı çeker). Bu yüzden bu fonlar için TEFAS'ın
+    // (yanlış pay grubuna ait) ham fiyatı fund_prices'a HİÇ yazılmaz — aksi
+    // halde bu fonksiyonun ileride (ör. checkpoint sıfırlanıp) tekrar
+    // çalıştırılması, tefas-sync'in/migration'ın düzelttiği bir fonun
+    // geçmişini sessizce yeniden bozardı.
+    const tefasPriceUnreliableCodes = new Set<string>();
+    {
+      const { data, error } = await admin
+        .from("fund_share_class_overrides")
+        .select("fund_code")
+        .eq("is_active", true)
+        .eq("tefas_price_is_native", false);
+      if (error) throw new Error(`fund_share_class_overrides okunamadı: ${error.message}`);
+      for (const row of data ?? []) tefasPriceUnreliableCodes.add(row.fund_code as string);
+    }
+
     const nowIso = new Date().toISOString();
     const priceRows = rows
-      .filter((r) => fundIdAndCurrencyByCode.has(r.code))
+      .filter((r) => fundIdAndCurrencyByCode.has(r.code) && !tefasPriceUnreliableCodes.has(r.code))
       .map((r) => {
         const fund = fundIdAndCurrencyByCode.get(r.code)!;
         return {
