@@ -101,6 +101,12 @@ Bölüm 21.6'da listelenen diğer döviz fonlarının fiyat/pay grubu denetimi i
 uydurma veri üretmemek için resmî PYŞ kaynağı bulunana kadar açık bir veri
 kalitesi incelemesi olarak kalır; doğrulanmamış fonlar otomatik değiştirilmez.
 
+**Özel (kullanıcı tanımlı) portföy dağılımı eklendi (bkz. Bölüm 24):** Hazır
+4 risk profili kartının sonuna, admin tarafından yayınlanmayan ve Supabase'e
+hiçbir zaman yazılmayan beşinci bir "Özel" kart eklendi; seçilince kullanıcı
+5 varlık sınıfı için kendi yüzdelerini girip mevcut hesaplama motorunu
+(değiştirilmeden) kullanarak sonuç alabiliyor (commit `80a68b7`).
+
 - **Canlı uygulama:** https://webappuygulamalar.github.io/fon-portfoy/
 - **GitHub deposu:** https://github.com/webappuygulamalar/fon-portfoy (public, `main`)
 - **Supabase projesi:** `fon-portfoy` (ref `lewccubzcsayqlkkyasb`, eu-central-1, ACTIVE_HEALTHY)
@@ -1393,9 +1399,140 @@ Kredi yanıt örneği dahil 16 adapter testi ve toplam **269/269** test geçti;
 lint 0 hata (önceden var olan 2 Fast Refresh uyarısı), typecheck, `deno check`
 ve production build temizdir.
 
-## 24. Güncel Commit Geçmişi (en yeniden en eskiye, bu özetin kapsadığı aralık)
+## 24. Özel (Kullanıcı Tanımlı) Portföy Dağılımı (2026-09-11)
+
+### 24.1 Ne eklendi, neden
+
+Kullanıcı, 4 hazır risk profili kartının (Düşük 1/Düşük 2/Orta/Yüksek)
+sonuna, "Yatırım dağılımınızı kendiniz oluşturun." alt açıklamalı beşinci
+bir **Özel** kartı istedi. Bu kart admin tarafından yayınlanan bir risk
+profili DEĞİLDİR — `ProfileModel` listesine (`data.profiles`) hiçbir zaman
+girmez ve Supabase'e yeni bir risk profili/pay grubu olarak asla yazılmaz;
+tamamen tarayıcı oturumuna (sessionStorage) özel, geçici bir dağılımdır.
+
+Seçildiğinde aynı sayfada, kartların altında bir düzenleyici açılır: 5
+varlık sınıfı (Mevduat, Para Piyasası Fonu, Katılım Hisse Fonu, Altın Fonu,
+Döviz Fonu — bunlar zaten `lib/constants.ts`'teki `ASSET_CLASSES` ile
+birebir aynıdır, yeni bir kategori icat edilmedi) için tam sayı, 0-100
+aralığında, doğrudan yazılabilir yüzde alanları (+/- düğmeleriyle
+desteklenmiş, yalnızca slider DEĞİL); değiştikçe canlı güncellenen, mevcut
+bağımlılıksız `DonutChart` bileşeniyle çizilen bir donut grafik; ve sürekli
+görünen "Toplam / Kalan" durumu (uygulamanın yeşil temasına uygun `Banner
+variant="info"` ile %100'de olumlu durum, `variant="warning"` ile metinli —
+yalnızca renkle değil — uyarı). Toplam tam %100 olmadan "Portföyü Hesapla"
+butonu HİÇBİR şekilde (klavye/tıklama/form) aktif olmaz — hem buton
+`disabled` olur hem de `CalculationResultPage` aynı koşulu ayrıca kontrol
+edip URL doğrudan açılırsa da hesaplama sayfasına yönlendirir.
+
+### 24.2 Mimari: ayrı bir hesaplama yolu YOK
+
+Görev talimatına uyularak özel dağılım için yeni bir hesaplama motoru
+YAZILMADI. `src/domain/calculation/customAllocation.ts`'teki
+`buildCustomProfileModel(allocations, defaultPreferredFundIdByAssetClass)`,
+özel dağılımı mevcut `ProfileModel` şekline dönüştürür (sabit
+`profileId="custom"`, veritabanı UUID'leriyle asla çakışmaz). Bu sayede
+`buildCalculationInput`, `resolveFundSelections`, `calculatePortfolio`
+(engine.ts), `AllocationEditor`, `CalculationSummary` ve
+`FundSubstitutionPage` **hiç değiştirilmeden** hem gerçek profiller hem
+Özel için aynı kod yoluyla çalışır. Engine matematiği, tam pay (floor)
+davranışı ve para piyasası fonuna kalan aktarma mantığı bire bir korundu.
+
+### 24.3 Standart fon çözümü — merkezi, tahmine dayanmayan karar
+
+`ProfileModel.preferredFundIdByAssetClass` profile'a özeldir (bkz.
+`buildProfileModels`) — Özel dağılımın bağlı olduğu bir profil yoktur, o
+yüzden "hangi profilin fonu kullanılsın" sorusu profil tahminiyle
+çözülemezdi. İnceleme sonucu: `model_preferred_funds` tablosu zaten
+`profile_id IS NULL` olan, "varsayılan, TÜM profiller" için ayrı bir satır
+tutuyor (`model_preferred_funds_default_unique` unique index) ve
+`AdminModelEditorPage`, bir modelin yayınlanabilmesi için HER
+`FundAssetClass` için bu varsayılanın dolu olmasını zaten zorunlu kılıyor
+(`missingPreferredFunds`). Yani bu, profile özel olmayan, her zaman
+var olması garanti TEK merkezi kaynaktır.
+
+Yeni `buildDefaultPreferredFundIdByAssetClass` (`domain/model/
+publishedModel.ts`), ham `ModelPreferredFundRow[]`'dan yalnızca bu
+`profile_id NULL` satırlarını çözümler; `usePublishedModel`, sonucu
+`PublishedModelData.defaultPreferredFundIdByAssetClass` olarak dışarı
+verir. `buildCustomProfileModel` standart fon kaynağı olarak bunu kullanır
+— fon kodu, kategori adı veya profil hard-code edilmedi.
+
+Bu inceleme sırasında **gerçek bir hata** bulunup düzeltildi:
+`FundSubstitutionPage.tsx`, Özel seçiliyken `selectedProfileId`
+`data.profiles` içinde bulunamadığından yanlışlıkla `data.profiles[0]`'a
+(listedeki ilk GERÇEK profile) düşüyor, "standart fon" rozetini o profilin
+kendi override'ına göre yanlış gösteriyordu. Artık orada da aynı
+`buildCustomProfileModel` + merkezi varsayılan kullanılıyor; canlıda
+Playwright ile doğrulandı (bkz. 24.6).
+
+### 24.4 %0 kategoriler ve "yatırım satırı" kuralı
+
+`CalculationSummary.tsx` artık yüzdesi 0 olan bir kategori için (Mevduat
+dahil) yatırım satırı GÖSTERMİYOR — engine hâlâ o satır için 0 tutarlı bir
+`FundLineResult` üretiyor (hesaplama mantığı değişmedi), yalnızca GÖSTERİM
+katmanında filtreleniyor. **İstisna: Para Piyasası Katılım Fonu.** Diğer
+fonların yuvarlama kalanı motor tarafından her zaman ona eklendiğinden
+(bkz. engine.ts), planlanan yüzdesi %0 olsa bile gerçek bir tutar
+taşıyabilir; bu yüzden asla gizlenmez — "Mevduat → PPF → azalan yüzde →
+Cari Hesap" sıralaması da bu şekilde korunur. Bu filtre hem Özel hem gerçek
+profiller için geçerlidir ama mevcut hiçbir DEFAULT_PROFILES/test
+senaryosunda %0'lık bir fon sınıfı olmadığından gerçek profillerde
+gözlemlenebilir bir davranış değişikliği YOKTUR (regresyon riski yok).
+
+### 24.5 Durumun korunması
+
+`CalculatorSelectionContext` (sessionStorage, `fonPortfoy.
+calculatorSelection.v1`) genişletildi: `customAllocations: Record<AssetClass,
+number>` eklendi. `sanitizeCustomAllocations`, bozuk/elle değiştirilmiş
+veriye karşı TÜM nesneyi (kısmi onarım yapmadan) güvenli %0 varsayılanına
+sıfırlar — CKS/BKY düzeltmelerindeki "sessizce yanlışa geri dönme" karşıtı
+prensiple tutarlı. `setSelectedProfileId`'nin mevcut davranışı (profil
+değişince fon override'larını sıfırlama) korundu; `customAllocations`
+buna DAHİL DEĞİLDİR — kullanıcı Özel'den gerçek bir profile geçip geri
+dönerse girdiği yüzdeler kaybolmaz, ama gerçek bir profil seçiliyken
+hesaplamaya asla karışmaz (yalnızca `selectedProfileId==="custom"`
+olduğunda okunur). Veritabanına hiçbir kullanıcı dağılımı yazılmaz.
+
+### 24.6 Testler ve canlı doğrulama
+
+16 dosyada yeni/güncellenmiş testlerle toplam **306/306** test geçti (lint
+0 hata — önceden var olan 2 Fast Refresh uyarısı hariç, typecheck ve
+production build temiz). Kapsanan senaryolar: Özel kartın son sırada
+görünmesi, ilk seçimde düzenleyicinin açılması, %99/%100/%101 toplam
+kontrolleri, negatif/100'den büyük değerlerin 0-100'e kırpılması, tek
+kategoriye %100 verilebilmesi, %0 kategorilerin serbest bırakılması ve
+sonuç satırlarında görünmemesi (PPF hariç), engine'e doğru yüzdelerin
+aktarılması, sayfa yenileme/geri dönme/fon değiştirme sonrası durumun
+korunması, gerçek profile geçince özel oranların karışmaması, bozuk
+sessionStorage'ın güvenle ele alınması, klavye erişilebilirliği (gerçek
+`<button>` semantiği) ve tüm mevcut engine/buildInput/profil testlerinin
+hâlâ geçmesi.
+
+Gerçek Supabase verisiyle (yerel dev sunucusu + Playwright, headless
+Chromium) canlı doğrulama yapıldı: 5 kart doğru sırada; düzenleyici açılıp
+donut/legend/toplam-kalan canlı güncelleniyor; %100'de yeşil banner;
+sonuç sayfasında "Özel Dağılım" başlığı, doğru yüzdeler (ör. Altın %20/
+BIST %20 eşitliğinde kod sırasına göre ZGD önce, ZKP sonra — mevcut
+sıralama kuralı gerçek verilerle de doğru çalışıyor), %0 kategoriler
+(Altın/BIST/Döviz) sonuç satırlarında yok, PPF %0 olsa bile satırı kalıyor;
+fon değiştirme akışı Özel modda da doğru "standart fon" rozetini gösteriyor
+ve geri dönüşte özel dağılım korunuyor. 1280px masaüstünde ve 375px/320px
+mobilde `document.documentElement.scrollWidth` hiçbir ekranda
+`clientWidth`'i aşmadı (yatay taşma yok); konsolda hata yakalanmadı.
+
+**Bununla ilgisiz, önceden var olan bir gözlem:** `CalculationResultPage`,
+`useFxRates`'in asenkron kur çekimini bekleyen bir yükleme durumu
+göstermiyor; döviz fiyatlı bir fon (ör. BKY) seçiliyken sayfa ilk
+render'ında kur henüz gelmediği için "Hesaplama yapılamıyor: döviz kuru
+eksik" bir anlığına görünüp kur geldiğinde (birkaç yüz ms içinde) kendiliğinden
+düzeliyor. Bu, Özel'e özgü değildir — aynı FX fonunu kullanan GERÇEK bir
+profilde de (test edildi: "Yüksek") aynı geçici durum oluşur; bu görevin
+kapsamı dışında olduğu için DOKUNULMADI, yalnızca not düşülüyor.
+
+## 25. Güncel Commit Geçmişi (en yeniden en eskiye, bu özetin kapsadığı aralık)
 
 ```
+80a68b7 Portföy hesaplamaya kullanıcı tanımlı "Özel" dağılım seçeneği ekle
 18732a5 BKY B Grubu USD fiyatını resmi kaynaktan düzelt
 554152c Nav ikonlarını tasarımcının verdiği gerçek SVG'lerle değiştir
 766115f Hesaplama/Fonlar nav ikonlarını emojiden sade SVG ikonlara çevir
