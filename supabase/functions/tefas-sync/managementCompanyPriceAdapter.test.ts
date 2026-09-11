@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
-import { fetchManagementCompanyPrice, parseIsPortfoyNativePrice } from "./managementCompanyPriceAdapter.ts";
+import {
+  fetchManagementCompanyPrice,
+  parseIsPortfoyNativePrice,
+  parseYapiKrediNativePrice,
+} from "./managementCompanyPriceAdapter.ts";
 import type { ShareClassOverride } from "./types.ts";
 
 // Canlı İş Portföy CKS (USD) sayfasından alınan, ilgili bloğu çevreleyen
@@ -28,6 +32,23 @@ const REAL_FRAGMENT = `
 </div>
 `;
 
+const YAPI_KREDI_REAL_PAYLOAD = {
+  data: [
+    {
+      code: "BKY",
+      lastUpdateDate: "11.09.2026",
+      unitAmount: {
+        TL: "50,491927 TL",
+        USD: "1,043073 USD",
+        EUR: null,
+        GBP: null,
+      },
+      risk: 3,
+      otherRisk: 6,
+    },
+  ],
+};
+
 function jsonOkResponse(html: string) {
   return { ok: true, status: 200, text: async () => html } as Response;
 }
@@ -54,6 +75,31 @@ describe("parseIsPortfoyNativePrice", () => {
   it("fiyat sıfır veya negatifse null döner", () => {
     const zero = REAL_FRAGMENT.replace("1,277608", "0");
     expect(parseIsPortfoyNativePrice(zero, "USD")).toBeNull();
+  });
+});
+
+describe("parseYapiKrediNativePrice", () => {
+  it("BKY resmî JSON'ından B Grubu USD fiyatını seçer; TL fiyatını kullanmaz", () => {
+    expect(parseYapiKrediNativePrice(YAPI_KREDI_REAL_PAYLOAD, "USD", "BKY")).toEqual({
+      price: 1.043073,
+      priceDate: "2026-09-11",
+    });
+  });
+
+  it("beklenen fon kodu endpoint yanıtıyla eşleşmiyorsa null döner", () => {
+    expect(parseYapiKrediNativePrice(YAPI_KREDI_REAL_PAYLOAD, "USD", "BDA")).toBeNull();
+  });
+
+  it("istenen para birimi veya para birimi son eki yoksa null döner", () => {
+    expect(parseYapiKrediNativePrice(YAPI_KREDI_REAL_PAYLOAD, "EUR", "BKY")).toBeNull();
+    const wrongSuffix = structuredClone(YAPI_KREDI_REAL_PAYLOAD);
+    wrongSuffix.data[0].unitAmount.USD = "1,043073 TL";
+    expect(parseYapiKrediNativePrice(wrongSuffix, "USD", "BKY")).toBeNull();
+  });
+
+  it("geçersiz JSON yapısında sayı uydurmaz", () => {
+    expect(parseYapiKrediNativePrice({ data: [] }, "USD", "BKY")).toBeNull();
+    expect(parseYapiKrediNativePrice(null, "USD", "BKY")).toBeNull();
   });
 });
 
@@ -100,5 +146,39 @@ describe("fetchManagementCompanyPrice", () => {
     const fetchImpl = vi.fn().mockResolvedValue(jsonOkResponse("<html>beklenmedik içerik</html>"));
     const result = await fetchManagementCompanyPrice(override, { fetchImpl });
     expect(result).toBeNull();
+  });
+
+  it("Yapı Kredi resmî API kaynağını POST ile çağırıp BKY native USD fiyatını döndürür", async () => {
+    const bkyOverride: ShareClassOverride = {
+      fundCode: "BKY",
+      shareClassLabel: "B Grubu",
+      nativeCurrency: "USD",
+      tefasPriceIsNative: false,
+      priceFetchSource: "yapikredi_resmi_api",
+      priceFetchUrl: "https://www.yapikrediportfoy.com.tr/getFundDetail/2125",
+    };
+    const fetchImpl = vi.fn().mockResolvedValue(jsonOkResponse(JSON.stringify(YAPI_KREDI_REAL_PAYLOAD)));
+
+    await expect(fetchManagementCompanyPrice(bkyOverride, { fetchImpl })).resolves.toEqual({
+      price: 1.043073,
+      priceDate: "2026-09-11",
+    });
+    expect(fetchImpl).toHaveBeenCalledWith(
+      bkyOverride.priceFetchUrl,
+      expect.objectContaining({ method: "POST", body: "{}", headers: expect.any(Object) }),
+    );
+  });
+
+  it("Yapı Kredi API geçersiz JSON döndürürse null döner", async () => {
+    const bkyOverride: ShareClassOverride = {
+      fundCode: "BKY",
+      shareClassLabel: "B Grubu",
+      nativeCurrency: "USD",
+      tefasPriceIsNative: false,
+      priceFetchSource: "yapikredi_resmi_api",
+      priceFetchUrl: "https://www.yapikrediportfoy.com.tr/getFundDetail/2125",
+    };
+    const fetchImpl = vi.fn().mockResolvedValue(jsonOkResponse("not-json"));
+    await expect(fetchManagementCompanyPrice(bkyOverride, { fetchImpl })).resolves.toBeNull();
   });
 });

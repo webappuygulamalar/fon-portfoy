@@ -11,11 +11,13 @@
 // tarafından okunabilir bir not düşer — ASLA eski/yanlış bir fiyata
 // sessizce geri dönülmez.
 //
-// Şu an yalnızca 'isportfoy_resmi_sayfa' kaynağı destekleniyor (İş Portföy
-// fon detay sayfaları: server-side render edilmiş düz HTML, bot koruması
-// yok — canlı doğrulandı, TEFAS'ın SPA'sının aksine düz `fetch()` ile
-// erişilebilir). Yeni bir PYŞ kaynağı eklemek, SOURCE_PARSERS'a yeni bir
-// giriş eklemek demektir; index.ts veya tablo şeması değişmez.
+// Desteklenen kaynaklar:
+//   - isportfoy_resmi_sayfa: server-side render edilmiş düz HTML.
+//   - yapikredi_resmi_api: Yapı Kredi Portföy'ün kendi fon detay sayfasının
+//     kullandığı, aynı origin'deki JSON endpoint'i.
+// Yeni bir PYŞ kaynağı eklenirken kaynak biçimine uygun, dar kapsamlı ve
+// fon kodunu da doğrulayan bir ayrıştırıcı eklenmelidir; index.ts veya tablo
+// şeması değişmez.
 import { parseTefasDate } from "./tefasAdapter.ts";
 import type { ShareClassOverride } from "./types.ts";
 
@@ -71,6 +73,55 @@ const SOURCE_PARSERS: Record<string, (html: string, currency: string) => Fetched
   isportfoy_resmi_sayfa: parseIsPortfoyNativePrice,
 };
 
+interface YapiKrediFundDetailRow {
+  code?: unknown;
+  lastUpdateDate?: unknown;
+  unitAmount?: unknown;
+}
+
+/**
+ * Yapı Kredi Portföy'ün resmî fon detay JSON'ından native pay grubu
+ * fiyatını ayrıştırır. Endpoint hem TL hem döviz pay gruplarını aynı
+ * `unitAmount` nesnesinde döndürür; istenen para birimi açıkça seçilir ve
+ * endpoint'in yanlış fon düğümüne yönelmesi ihtimaline karşı fon kodu da
+ * doğrulanır.
+ */
+export function parseYapiKrediNativePrice(
+  payload: unknown,
+  currency: string,
+  expectedFundCode: string,
+): FetchedNativePrice | null {
+  if (typeof payload !== "object" || payload === null) return null;
+
+  const data = (payload as { data?: unknown }).data;
+  if (!Array.isArray(data) || data.length === 0) return null;
+
+  const row = data[0] as YapiKrediFundDetailRow;
+  if (typeof row.code !== "string" || row.code.toUpperCase() !== expectedFundCode.toUpperCase()) return null;
+  if (typeof row.lastUpdateDate !== "string") return null;
+  if (typeof row.unitAmount !== "object" || row.unitAmount === null) return null;
+
+  const rawAmount = (row.unitAmount as Record<string, unknown>)[currency];
+  if (typeof rawAmount !== "string") return null;
+
+  // Canlı biçim örneği: "1,043073 USD". Para birimi son ekini zorunlu
+  // tutmak, yanlışlıkla TL alanının USD diye kabul edilmesini engeller.
+  const amountMatch = new RegExp(`^\\s*([\\d.]+(?:,\\d+)?)\\s+${currency}\\s*$`, "i").exec(rawAmount);
+  if (!amountMatch) return null;
+
+  let priceDate: string;
+  try {
+    priceDate = parseTefasDate(row.lastUpdateDate);
+  } catch {
+    return null;
+  }
+
+  const price = Number(amountMatch[1].replaceAll(".", "").replace(",", "."));
+  if (!Number.isFinite(price) || price <= 0) return null;
+
+  return { price, priceDate };
+}
+
 /**
  * Bir fund_share_class_overrides satırı için, o fonun resmi PYŞ sayfasından
  * bugünün native fiyatını çeker.
@@ -90,8 +141,9 @@ export async function fetchManagementCompanyPrice(
 ): Promise<FetchedNativePrice | null> {
   if (!override.priceFetchSource || !override.priceFetchUrl) return null;
 
-  const parser = SOURCE_PARSERS[override.priceFetchSource];
-  if (!parser) {
+  const htmlParser = SOURCE_PARSERS[override.priceFetchSource];
+  const isYapiKrediApi = override.priceFetchSource === "yapikredi_resmi_api";
+  if (!htmlParser && !isYapiKrediApi) {
     throw new Error(
       `Bilinmeyen fiyat kaynağı: "${override.priceFetchSource}" (fon: ${override.fundCode})`,
     );
@@ -103,7 +155,11 @@ export async function fetchManagementCompanyPrice(
   let res: Response;
   try {
     res = await fetchImpl(override.priceFetchUrl, {
-      headers: DEFAULT_HEADERS,
+      method: isYapiKrediApi ? "POST" : "GET",
+      headers: isYapiKrediApi
+        ? { ...DEFAULT_HEADERS, Accept: "application/json", "Content-Type": "application/json" }
+        : DEFAULT_HEADERS,
+      body: isYapiKrediApi ? "{}" : undefined,
       signal: controller.signal,
     });
   } finally {
@@ -116,6 +172,18 @@ export async function fetchManagementCompanyPrice(
     );
   }
 
-  const html = await res.text();
-  return parser(html, override.nativeCurrency);
+  const responseBody = await res.text();
+  if (isYapiKrediApi) {
+    try {
+      return parseYapiKrediNativePrice(
+        JSON.parse(responseBody) as unknown,
+        override.nativeCurrency,
+        override.fundCode,
+      );
+    } catch {
+      return null;
+    }
+  }
+
+  return htmlParser!(responseBody, override.nativeCurrency);
 }
