@@ -1615,17 +1615,34 @@ kullanır; ayrı bir dal yoktur.
 
 ### 25.3 Testler ve canlı doğrulama
 
-Toplam **332/332** test geçiyor (14 yeni: `engine.test.ts`'te 7 senaryo —
-PPF %0 + artık taşınmaması, artığın Cari Hesap'ta kalması, toplam portföy
-kontrolü, PPF>0 iken eski davranışın sürmesi, politika verilmezse hazır
-profil davranışının değişmemesi, PPF hedef+gerçekleşen sıfırsa taşınacak
-tutar olmaması, döviz fonunda tek pay bile alınamayan küçük hedefin tamamen
-Cari Hesap'a gitmesi; `buildInput.test.ts`'te 2 — gerçek/Özel profil için
-doğru politika seçimi; `useFxRates.test.ts`'te 7 — TL'de istek atılmaması,
-başarılı yükleme, gerçekten eksik kur, ağ hatası, hazır/Özel profil
-eşdeğerliği, para birimi listesi değişince yeniden yükleme;
-`CalculationResultPage.test.tsx`'te PPF senaryoları + kur durumu
-entegrasyon testleri), lint/typecheck/build temiz.
+Test sayısı, önceki (`ffe2c90`, 306/306) ve bu değişikliğin commit'i
+(`366f1cd`) arasında dosya bazında `git diff` ile birebir doğrulanmıştır —
+toplam **26 net yeni test** eklendi, genel toplam **306 → 332** oldu
+(`npm run test` ile ayrıca tekrar çalıştırılıp 332/332 doğrulandı):
+
+- `engine.test.ts`: **+8** — PPF %0 + artık taşınmaması, artığın Cari
+  Hesap'ta kalması, toplam portföy kontrolü, cari hesap bakiyesinin
+  yanlış-pozitif üretmemesi, PPF>0 iken eski davranışın sürmesi, politika
+  verilmezse hazır profil davranışının değişmemesi, PPF hedef+gerçekleşen
+  sıfırsa taşınacak tutar olmaması, döviz fonunda tek pay bile alınamayan
+  küçük hedefin tamamen Cari Hesap'a gitmesi.
+- `buildInput.test.ts`: **+2** — gerçek profil için her zaman
+  "MONEY_MARKET", Özel (`CUSTOM_PROFILE_ID`) profili için
+  "CASH_IF_MONEY_MARKET_ZERO" politikasının seçilmesi.
+- `useFxRates.test.ts` (yeni dosya): **+7** — TL'de hiç istek atılmaması,
+  başarılı yükleme (loading→rates), istek başarıyla tamamlanıp kur
+  gerçekten bulunamaması, ağ/istisna hatası, hazır/Özel profil
+  eşdeğerliği, para birimi listesi değişince yeniden yükleme.
+- `CalculationResultPage.test.tsx`: **net +9** — eski "%0 kategoriler (PPF
+  hariç)" testi, yeni PPF %0 kuralını doğrulayacak şekilde kapsamı
+  genişletilerek yeniden yazıldı (bu tek değişiklik net etkisiz: −1/+1) ve
+  ayrıca 8 yeni senaryo eklendi: PPF %0 + tam pay artığı → Cari Hesap +
+  toplam portföy kontrolü, döviz fonunda tek pay alınamayan küçük hedef,
+  fon değiştirme sonrası PPF politikasının korunması, ve kur
+  yükleniyor/başarılı/gerçekten-eksik/ağ-hatası/hazır-Özel-eşdeğerliği/
+  TL-portföyü-etkilenmemesi için 6 entegrasyon testi.
+
+Lint/typecheck/build temiz.
 
 Gerçek Supabase verisiyle Playwright doğrulaması: Özel + PPF %0 + tam pay
 artığı olan bir hesaplamada artık (₺346,94, canlı fiyatlarla) Cari Hesap'a
