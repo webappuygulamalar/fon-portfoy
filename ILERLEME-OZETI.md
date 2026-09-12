@@ -107,6 +107,14 @@ hiçbir zaman yazılmayan beşinci bir "Özel" kart eklendi; seçilince kullanı
 5 varlık sınıfı için kendi yüzdelerini girip mevcut hesaplama motorunu
 (değiştirilmeden) kullanarak sonuç alabiliyor (commit `80a68b7`).
 
+**Özel dağılım ayrı bir sayfaya taşındı (bkz. Bölüm 26):** Özel kartının
+aynı sayfada açtığı satır içi düzenleyici, mobilde yüzde alanlarının
+ekranın çok altında kalıp kullanıcının kaydırması gerektiğini fark
+etmemesine yol açıyordu. Kart artık bir toggle değil, ayrı bir adıma
+(`#/hesaplama/ozel`, "Kendi Dağılımını Oluştur") götüren navigasyon; yeni
+sayfada yüzde alanları ilk ekranda (hiç kaydırmadan) görünüyor (commit
+`c25aa2f`).
+
 - **Canlı uygulama:** https://webappuygulamalar.github.io/fon-portfoy/
 - **GitHub deposu:** https://github.com/webappuygulamalar/fon-portfoy (public, `main`)
 - **Supabase projesi:** `fon-portfoy` (ref `lewccubzcsayqlkkyasb`, eu-central-1, ACTIVE_HEALTHY)
@@ -1658,9 +1666,121 @@ sonsuz yüklenmeye düşülmeden "Döviz kuru bilgisi alınamadı" hatası
 gösteriliyor. 320/375/390/428px mobil genişliklerde yatay taşma ve
 konsol hatası yok. Kod commit'i: `366f1cd`.
 
-## 26. Güncel Commit Geçmişi (en yeniden en eskiye, bu özetin kapsadığı aralık)
+## 26. Özel Dağılımı Ayrı Bir Adıma Taşıma (2026-09-12)
+
+### 26.1 Sorun
+
+Canlı mobil kullanımda "Özel" kartına dokunulduğunda kart aynı sayfada
+seçili ve büyük (donut grafikli) halde kalıyor, altında satır içi
+düzenleyici (5 yüzde alanı + donut + toplam/kalan) açılıyordu. Bu blok
+ekranı doldurduğu için kullanıcı, gerçek yüzde giriş alanlarını görmek
+için aşağı kaydırması gerektiğini fark etmiyordu — özellik teknik olarak
+çalışıyordu ama keşfedilemiyordu. `scrollIntoView`/otomatik kaydırma gibi
+bir yama yerine (kullanıcının açıkça istemediği), Özel dağılım TAMAMEN
+AYRI, odaklanmış bir adıma taşındı.
+
+### 26.2 Yeni rota ve navigasyon semantiği
+
+`#/hesaplama/ozel` (`CustomAllocationPage.tsx`) eklendi. Ana sayfadaki
+(`CalculatorPage.tsx`) "Özel" kartı artık bir TOGGLE değil — tıklanınca
+`navigate("/hesaplama/ozel")` çalışır, aynı sayfada hiçbir şey açılmaz.
+Bu semantik farkı yansıtmak için `CustomProfileCard` artık `aria-pressed`
+KULLANMIYOR (o, "aynı sayfada kalan basılı/basılı-değil" durumunu ifade
+eder; burada geçerli değil) — gerçek bir `<button type="button">` olmaya
+devam ediyor, böylece Tab ile odaklanma ve hem Enter hem Space ile açılma
+(native buton davranışı) korunuyor. Kart, kullanıcının hâlâ Özel'i
+kullandığını göstermek için `selected` durumunda GÖRSEL olarak
+vurgulanıyor (`.selected` class) ama bu artık salt görsel bir ipucu,
+ARIA toggle durumu değil. Küçük bir ">" ok ikonu, kartın "ileri götüren"
+bir eylem olduğunu belirtiyor.
+
+`CustomAllocationPage`, ziyaret edildiği anda `selectedProfileId`'yi
+kendiliğinden `CUSTOM_PROFILE_ID`'ye sabitler (bozuk/eksik/eski bir
+`selectedProfileId` sessionStorage'da olsa bile) — `customAllocations`
+zaten güvenli, sanitize edilmiş bir varsayılana (`%0`'lar) sahip olduğu
+için doğrudan/bozuk state ile açılışta ayrı bir "ana sayfaya yönlendir"
+adımına gerek yoktur; sayfa kendi kendine yeterlidir.
+
+`CalculationResultPage`'deki "← Geri dön" düğmesi artık koşullu: Özel
+dağılımda `#/hesaplama/ozel`'e, hazır profillerde (DEĞİŞMEDEN) `/`'e
+döner. Tüm yeni navigasyonlar `navigate()` ile PUSH yapıldığından (hiçbir
+yerde `replace` kullanılmadı), tarayıcının gerçek geri/ileri düğmeleri de
+ayrıca doğru sırada çalışır: Ana hesaplama → Özel dağılım → Sonuç — bu,
+canlı Playwright ile `page.goBack()`/`page.goForward()` çağrılarıyla
+doğrudan doğrulandı.
+
+### 26.3 Sayfa içeriği ve mobil-öncelikli sıralama
+
+`CustomAllocationEditor.tsx` yeniden sıralandı (`.custom-allocation-layout`
+flex kapsayıcı): mobilde (tek sütun) DOM sırası — yüzde alanları → toplam/
+kalan durumu (kart içinde) → donut+legend (ayrı blok). Masaüstünde
+(`>=768px`) aynı iki blok `flex-direction: row` ile YAN YANA dizilir
+(alanlar solda `flex:1 1 360px`, donut sağda `flex:0 0 260px`) — DOM sırası
+ve dolayısıyla mobil davranış hiç değişmez, yalnızca akış yönü döner.
+Sayfa (`CustomAllocationPage.tsx`) bunun etrafına başlık/açıklama, toplam
+tutar alanı (mevcut `AmountInput`, ayrı bir `.card` kullanmadan) ve
+"Portföyü Hesapla" butonunu ekler. Dokunma hedefleri: yüzde giriş
+kutuları zaten `.input` sınıfından `min-height:44px` alıyordu; +/- artırma/
+azaltma düğmeleri (`.custom-allocation-step`) `40px`'ten `44px`'e
+büyütüldü.
+
+Gerçek Playwright ölçümü (375×667, iPhone SE boyutu — en kısa yaygın
+gerçek cihaz): "Mevduat" yüzde alanının üst kenarı `y≈385px`'te, yani
+kaydırma OLMADAN ilk ekranda tamamen görünür durumda. Yeni bir grafik
+kütüphanesi eklenmedi; mevcut bağımlılıksız `DonutChart` aynen yeniden
+kullanıldı. "ALT İŞLEM ALANI" için önerilen sticky (yapışkan) alt bar
+BİLİNÇLİ OLARAK eklenmedi — görev tanımında bu "kullanılabilir" (opsiyonel)
+olarak belirtilmişti; sayfa artık zaten kısa ve tüm içerik (yüzde alanları,
+toplam/kalan, donut, buton) kaydırma sonrası hızla erişilebilir olduğundan
+sticky pozisyonlamanın (iOS Safari klavye/safe-area tuzakları dahil) ek
+riskini üstlenmeye gerek görülmedi. Kullanıcı isterse ayrı bir istek
+olarak eklenebilir.
+
+### 26.4 Korunan davranışlar
+
+Motor politikası (`roundingRemainderPolicy`), standart fon çözümü
+(`buildDefaultPreferredFundIdByAssetClass`), FX loading/error ayrımı, fon
+değiştirme akışı (`FundSubstitutionPage`), `CalculatorSelectionContext`/
+sessionStorage yapısı, hazır risk profillerinin tüm davranışları ve admin/
+Supabase/TEFAS-KAP/BKY-CKS/PWA hiç değiştirilmedi — bu görevde yalnızca
+kullanıcı arayüzü/navigasyon katmanına dokunuldu.
+
+### 26.5 Testler ve canlı doğrulama
+
+Dosya bazında net değişim (`8390406` → `c25aa2f`, `git diff`'teki
+`+`/`-` `it(` satırlarıyla doğrulandı): `CalculatorPage.test.tsx` **-7**
+(20→13; satır içi düzenleyiciye özel 12 test kaldırıldı — çoğu
+`CustomAllocationPage.test.tsx`'e taşındı/genişletildi — 5 yeni test
+eklendi: navigasyon, aria-pressed'siz erişilebilirlik, tamamlanmış bir
+özel dağılımla dönüş senaryoları), `CalculationResultPage.test.tsx` **+1**
+(26→27; Özel'de "Geri dön"ün `#/hesaplama/ozel`'e gitmesi),
+`CustomAllocationPage.test.tsx` (yeni dosya) **+17**. Toplam **net +11**,
+genel toplam **332 → 343** (`npm run test` ile ayrıca doğrulandı, 343/343
+geçiyor). Lint (0 hata, önceki 2 Fast Refresh uyarısı hariç), typecheck ve
+production build temiz.
+
+Gerçek Supabase verisiyle canlı Playwright doğrulaması (yerel dev sunucusu,
+headless Chromium, ekran görüntüleriyle): Özel karta tıklayınca
+`#/hesaplama/ozel`'e gidiyor, ana sayfada hiçbir inline düzenleyici
+kalmıyor; 375×667 ve 375×812'de yüzde alanları ilk ekranda görünüyor;
+320/375/390/428px'te `scrollWidth === clientWidth` (yatay taşma yok);
+doğrudan `#/hesaplama/ozel` URL'sine gidiş çökmeden çalışıyor; ana sayfada
+girilen tutar Özel sayfasına taşınıyor, Geri dön sonrası ana sayfada aynı
+tutar korunuyor ve daha önce tamamlanmış bir özel dağılımla dönüldüğünde
+Portföyü Hesapla doğrudan aktif; tarayıcı `goBack()`/`goForward()` sırası
+Ana hesaplama → Özel dağılım → Sonuç → (geri) Özel dağılım → (geri) Ana
+sayfa → (ileri) Özel dağılım olarak doğrulandı; fon değiştirme akışından
+dönüldüğünde hem özel dağılım hem yeni rota korunuyor (Geri dön
+`#/hesaplama/ozel`'e gidiyor, yüzdeler aynı kalıyor); masaüstünde iki
+sütunlu yerleşim dengeli görünüyor; hiçbir adımda konsol/sayfa hatası
+yakalanmadı. Kod commit'i: `c25aa2f`.
+
+## 27. Güncel Commit Geçmişi (en yeniden en eskiye, bu özetin kapsadığı aralık)
 
 ```
+c25aa2f Özel dağılımı ayrı bir #/hesaplama/ozel adımına taşı
+8390406 docs: Bölüm 25'teki yanlış test sayısını düzelt
+5b81dbf İlerleme özetine PPF %0 kuralı ve kur yükleme durumu düzeltmesini ekle
 366f1cd Özel dağılımda PPF %0 kuralını düzelt, kur yükleme durumunu ayrıştır
 80a68b7 Portföy hesaplamaya kullanıcı tanımlı "Özel" dağılım seçeneği ekle
 18732a5 BKY B Grubu USD fiyatını resmi kaynaktan düzelt
