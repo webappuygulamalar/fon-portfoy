@@ -1520,18 +1520,131 @@ ve geri dönüşte özel dağılım korunuyor. 1280px masaüstünde ve 375px/320
 mobilde `document.documentElement.scrollWidth` hiçbir ekranda
 `clientWidth`'i aşmadı (yatay taşma yok); konsolda hata yakalanmadı.
 
-**Bununla ilgisiz, önceden var olan bir gözlem:** `CalculationResultPage`,
-`useFxRates`'in asenkron kur çekimini bekleyen bir yükleme durumu
-göstermiyor; döviz fiyatlı bir fon (ör. BKY) seçiliyken sayfa ilk
-render'ında kur henüz gelmediği için "Hesaplama yapılamıyor: döviz kuru
-eksik" bir anlığına görünüp kur geldiğinde (birkaç yüz ms içinde) kendiliğinden
-düzeliyor. Bu, Özel'e özgü değildir — aynı FX fonunu kullanan GERÇEK bir
-profilde de (test edildi: "Yüksek") aynı geçici durum oluşur; bu görevin
-kapsamı dışında olduğu için DOKUNULMADI, yalnızca not düşülüyor.
+**ARTIK GEÇERLİ DEĞİL — Bölüm 25'te düzeltildi:** Bir önceki oturumda burada
+not düşülen "`CalculationResultPage`, kur yüklenirken bir anlığına yanlış
+'döviz kuru eksik' hatası gösteriyor" gözlemi artık geçerli değildir;
+`useFxRates` yükleniyor/hata/başarı durumlarını ayrıştıracak şekilde
+genişletildi ve sayfa artık nötr bir "Kur bilgisi yükleniyor…" durumu
+gösteriyor (Bölüm 25).
 
-## 25. Güncel Commit Geçmişi (en yeniden en eskiye, bu özetin kapsadığı aralık)
+**Özel dağılımda PPF %0 kuralı ve kur yükleme durumu ayrımı (bkz. Bölüm
+25):** Kullanıcı geri bildirimiyle iki UX sorunu düzeltildi: (1) Özel
+dağılımda PPF'ye %0 verildiğinde diğer fonların yuvarlama artığı artık PPF'ye
+değil doğrudan Cari Hesap'a gidiyor (yeni, geriye uyumlu
+`roundingRemainderPolicy` motor seçeneği — hazır profiller etkilenmedi);
+(2) yukarıdaki kur yükleme durumu ayrımı.
+
+## 25. Özel Dağılımda PPF %0 Kuralı ve Kur Yükleme Durumu Ayrımı (2026-09-12)
+
+### 25.1 PPF %0 kuralı — motor seviyesinde, UI hilesi değil
+
+**Sorun:** Özel dağılımda kullanıcı Para Piyasası Katılım Fonu'na (PPF)
+bilinçli olarak %0 verse bile, diğer fonlardan (BIST/Altın/Döviz) gelen tam
+pay yuvarlama artığı `engine.ts` tarafından hâlâ PPF'nin hedefine ekleniyor
+ve PPF'ye — kullanıcının açık tercihine rağmen — gerçek bir tutar
+yatırılıyordu.
+
+**Çözüm:** `types.ts`'e geriye uyumlu bir `RoundingRemainderPolicy` seçeneği
+eklendi:
+
+- `"MONEY_MARKET"` (varsayılan): artık her zaman PPF hedefine eklenir —
+  bugüne kadarki davranışın AYNISI.
+- `"CASH_IF_MONEY_MARKET_ZERO"`: yalnızca PPF'nin PLANLANAN yüzdesi tam 0
+  ise artık PPF'ye hiç eklenmez.
+
+`buildInput.ts`'teki `buildCalculationInput`, profili `profileId ===
+CUSTOM_PROFILE_ID` olup olmamasına göre bu politikayı SEÇER — hazır risk
+profilleri (gerçek UUID profil id'leri) her zaman `"MONEY_MARKET"` alır ve
+bu, hiçbir koşulda değişmez; PPF oranı %0 olan bir hazır profil bugün
+olmasa da, ileride olsa bile davranışı AYNI kalır (motorun varsayılanı
+budur). `engine.ts`'te tek değişiklik: yuvarlama artığı `PPF hedefine
+eklenmeden ÖNCE` `suppressMoneyMarketRemainder = policy ===
+"CASH_IF_MONEY_MARKET_ZERO" && mmPercentage === 0` bayrağıyla kontrol
+ediliyor; bastırıldığında artık PPF'nin `carriedToMoneyMarket` toplamına
+hiç eklenmiyor. Bunun ötesinde HİÇBİR hesaplama adımı değişmedi:
+`cashBalance = total - mevduat - yatırılan` formülü zaten var olduğu için
+PPF'ye eklenmeyen her TL otomatik olarak Cari Hesap'a düşüyor — ayrı bir
+"cari hesaba ekle" adımına gerek kalmadı. `isCashBalanceValid`'in üst sınırı
+da yalnızca bu politika devredeyken (aktif, yüzdesi > 0 olan hisse bazlı
+fonların birim fiyatları toplamına göre) genişletildi; aksi halde büyük
+(ama matematiksel olarak doğru) bir Cari Hesap bakiyesi yanlışlıkla
+"beklenen aralıkta değil" uyarısı üretirdi. `CalculationSummary.tsx`'teki
+PPF satırı artık yalnızca hedefi VE gerçekleşeni birlikte tam 0 ise
+gizleniyor — varsayılan politikada PPF hâlâ artık taşıyabildiği için bu
+koşul orada hiçbir zaman sağlanmaz, satır yanlışlıkla gizlenmez.
+
+**Geriye uyumluluk:** `roundingRemainderPolicy` alanı `PortfolioCalculationInput`'a
+EKLENEN, opsiyonel bir alandır; verilmezse (`undefined`) motor eskisi gibi
+`"MONEY_MARKET"` kullanır. Düşük 1/Düşük 2/Orta/Yüksek dahil tüm gerçek
+profillerin hesaplama sonucu, testlerdeki mevcut assertion'lar hiç
+değiştirilmeden (`engine.test.ts`'teki 10.000 TL örneği dahil) hâlâ birebir
+geçiyor — davranışları YALNIZCA `buildInput.ts`'in onlar için her zaman
+`"MONEY_MARKET"` göndermesiyle değil, motorun kendi varsayılanıyla da iki
+kat güvence altındadır.
+
+### 25.2 Kur (FX) yükleme durumunun ayrıştırılması
+
+**Sorun:** `useFxRates` yalnızca bir `Record<string, FxRateRow>` dönüyordu;
+`CalculationResultPage` kur isteği HENÜZ sürerken de `calculatePortfolio`'yu
+çalıştırıyor, boş `fxRates` motor tarafından "gerçekten eksik kur"
+(`MISSING_FX_RATE`) sanılıyor ve döviz fiyatlı bir fon (ör. BKY) seçiliyken
+sayfa ilk açıldığında bir anlığına yanlış "Hesaplama yapılamıyor: döviz
+kuru eksik" hatası görünüyordu.
+
+**Çözüm:** `useFxRates`, `{ rates, loading, error }` döner hale getirildi;
+üç durumu KESİN olarak ayırır:
+
+- `loading`: yalnızca gerçek bir istek sürerken `true`. `currencies` TRY
+  dışında hiçbir para birimi içermiyorsa (TL portföyü) hiç istek atılmaz,
+  bu hep `false` kalır — TL portföyleri hiçbir zaman gereksiz yere beklemez.
+- `error`: yalnızca isteğin KENDİSİ (ağ/istisna) başarısız olduğunda dolu.
+- `rates`: istek başarıyla tamamlandığında dönen harita — aranan para
+  birimi haritada yoksa bu "gerçekten eksik" anlamına gelir (`error`
+  DEĞİLDİR) ve motorun mevcut `MISSING_FX_RATE` mekanizmasıyla ayrıca ele
+  alınır; burada yeniden icat edilmedi.
+
+`CalculationResultPage`, `usePublishedModel`'in yükleme/hata kontrollerinin
+hemen ardından iki yeni erken dönüş ekliyor: `fxLoading` iken hesaplamayı
+hiç ÇALIŞTIRMADAN, hata GÖRÜNÜMÜNDE OLMAYAN, `role="status" aria-live="polite"`
+ile erişilebilir "Kur bilgisi yükleniyor…" metni gösteriyor; `fxError`
+doluysa ayrı bir `Banner variant="danger"` ile (MISSING_FX_RATE mesajıyla
+KARIŞTIRILMADAN) gösteriliyor. Sonsuz yüklenme riski yok — `useFxRates`
+her koşulda (başarı/boş sonuç/hata) `loading`'i `false`'a çeker. Hazır
+profil ve Özel profil TAMAMEN aynı kod yolunu (aynı hook, aynı sayfa)
+kullanır; ayrı bir dal yoktur.
+
+### 25.3 Testler ve canlı doğrulama
+
+Toplam **332/332** test geçiyor (14 yeni: `engine.test.ts`'te 7 senaryo —
+PPF %0 + artık taşınmaması, artığın Cari Hesap'ta kalması, toplam portföy
+kontrolü, PPF>0 iken eski davranışın sürmesi, politika verilmezse hazır
+profil davranışının değişmemesi, PPF hedef+gerçekleşen sıfırsa taşınacak
+tutar olmaması, döviz fonunda tek pay bile alınamayan küçük hedefin tamamen
+Cari Hesap'a gitmesi; `buildInput.test.ts`'te 2 — gerçek/Özel profil için
+doğru politika seçimi; `useFxRates.test.ts`'te 7 — TL'de istek atılmaması,
+başarılı yükleme, gerçekten eksik kur, ağ hatası, hazır/Özel profil
+eşdeğerliği, para birimi listesi değişince yeniden yükleme;
+`CalculationResultPage.test.tsx`'te PPF senaryoları + kur durumu
+entegrasyon testleri), lint/typecheck/build temiz.
+
+Gerçek Supabase verisiyle Playwright doğrulaması: Özel + PPF %0 + tam pay
+artığı olan bir hesaplamada artık (₺346,94, canlı fiyatlarla) Cari Hesap'a
+gidiyor, PPF satırı Pay Hesaplama Özeti'nden kayboluyor, toplam portföy
+kontrolü (₺1.000.005) birebir tutuyor, yanlış-pozitif "beklenen aralıkta
+değil" uyarısı çıkmıyor; PPF>0 olan Özel hesaplamada eski davranış
+(PPF satırı görünür) sürüyor; hazır "Düşük 1" ve "Yüksek" (BKY/FX
+kullanan) profilleri değişmeden çalışıyor; `fx_rates` isteği 1,5sn
+yapay gecikmeyle test edildiğinde bu süre boyunca kırmızı hata banner'ı
+HİÇ görünmüyor, yalnızca nötr "Kur bilgisi yükleniyor…" görünüyor, istek
+tamamlanınca doğru sonuç geliyor; istek 500 ile başarısız olduğunda
+sonsuz yüklenmeye düşülmeden "Döviz kuru bilgisi alınamadı" hatası
+gösteriliyor. 320/375/390/428px mobil genişliklerde yatay taşma ve
+konsol hatası yok. Kod commit'i: `366f1cd`.
+
+## 26. Güncel Commit Geçmişi (en yeniden en eskiye, bu özetin kapsadığı aralık)
 
 ```
+366f1cd Özel dağılımda PPF %0 kuralını düzelt, kur yükleme durumunu ayrıştır
 80a68b7 Portföy hesaplamaya kullanıcı tanımlı "Özel" dağılım seçeneği ekle
 18732a5 BKY B Grubu USD fiyatını resmi kaynaktan düzelt
 554152c Nav ikonlarını tasarımcının verdiği gerçek SVG'lerle değiştir
