@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildCalculationInput, resolveFundSelections } from "./buildInput";
+import { CUSTOM_PROFILE_ID } from "./customAllocation";
 import type { ProfileModel } from "../model/publishedModel";
 import type { FundPriceRow, FundRow, FxRateRow } from "../../services/types";
 
@@ -87,6 +88,19 @@ describe("resolveFundSelections", () => {
     const bist = selections.find((s) => s.assetClass === "BIST_EQUITY")!;
     expect(bist.fundId).toBe("fund-alt-bist");
     expect(bist.isOverride).toBe(true);
+  });
+});
+
+describe("buildCalculationInput — roundingRemainderPolicy seçimi", () => {
+  it("gerçek (yayınlanmış) bir profil için her zaman 'MONEY_MARKET' politikasını seçer", () => {
+    const input = buildCalculationInput(1000, profile, fundsById, {}, {}, {});
+    expect(input.roundingRemainderPolicy).toBe("MONEY_MARKET");
+  });
+
+  it("Özel (CUSTOM_PROFILE_ID) profili için 'CASH_IF_MONEY_MARKET_ZERO' politikasını seçer", () => {
+    const customProfile: ProfileModel = { ...profile, profileId: CUSTOM_PROFILE_ID };
+    const input = buildCalculationInput(1000, customProfile, fundsById, {}, {}, {});
+    expect(input.roundingRemainderPolicy).toBe("CASH_IF_MONEY_MARKET_ZERO");
   });
 });
 

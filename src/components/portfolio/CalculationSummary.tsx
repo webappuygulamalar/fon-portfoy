@@ -40,13 +40,22 @@ export function CalculationSummary({ result }: CalculationSummaryProps) {
   // %0 verilen bir kategori (ör. Özel dağılımda kullanıcının hiç pay
   // ayırmadığı bir fon sınıfı) için yatırım satırı GÖSTERİLMEZ — hedef/
   // gerçekleşen tutar zaten 0'dır, göstermek yanıltıcı bir "boş" satır
-  // yaratır. Para Piyasası Katılım Fonu bunun İSTİSNASIdır: diğer fonların
-  // yuvarlama kalanı her zaman ona eklenir (bkz. engine.ts), bu yüzden
-  // planlanan yüzdesi %0 olsa bile gerçek bir tutar taşıyabilir ve asla
-  // gizlenmez.
-  const allLines = orderFundLinesForDisplay(result.fundLines, result.moneyMarketLine).filter(
-    (line) => line.percentage > 0 || line.assetClass === "MONEY_MARKET",
-  );
+  // yaratır. Para Piyasası Katılım Fonu (PPF) özel: varsayılan
+  // "MONEY_MARKET" yuvarlama politikasında diğer fonların kalanı her zaman
+  // ona eklenir, bu yüzden planlanan yüzdesi %0 olsa bile GERÇEKTEN bir
+  // tutar taşıyabilir — o durumda satırı gizlemek parayı "kaybetmiş" gibi
+  // gösterir. Bu yüzden PPF yalnızca HEDEFİ VE GERÇEKLEŞEN TUTARI birlikte
+  // tam 0 ise gizlenir (Özel dağılımda PPF %0 verilip
+  // "CASH_IF_MONEY_MARKET_ZERO" politikası devredeyken bu koşul sağlanır —
+  // bkz. engine.ts `suppressMoneyMarketRemainder`); diğer 0 durumlarında
+  // (varsayılan politika, ama nadiren gerçek tutar da 0 çıkarsa) yine
+  // güvenle gizlenir çünkü gösterilecek hiçbir gerçek yatırım yoktur.
+  const allLines = orderFundLinesForDisplay(result.fundLines, result.moneyMarketLine).filter((line) => {
+    if (line.assetClass === "MONEY_MARKET") {
+      return !(line.targetAmount.eq(0) && line.actualAmount.eq(0));
+    }
+    return line.percentage > 0;
+  });
   const depositPlannedPct =
     result.distribution.find((d) => d.assetClass === "DEPOSIT")?.plannedPercentage ?? 0;
   const showDepositRow = depositPlannedPct > 0;

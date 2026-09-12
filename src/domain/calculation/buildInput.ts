@@ -1,6 +1,7 @@
 import { SHARE_BASED_ASSET_CLASSES, type AssetClass } from "../../lib/constants";
 import type { FundPriceRow, FundRow, FxRateRow } from "../../services/types";
 import type { ProfileModel } from "../model/publishedModel";
+import { CUSTOM_PROFILE_ID } from "./customAllocation";
 import type { FundAssetClass, FxRateInput, PortfolioCalculationInput } from "./types";
 
 const MONEY_MARKET: FundAssetClass = "MONEY_MARKET";
@@ -93,5 +94,11 @@ export function buildCalculationInput(
     fundPrices,
     fxRates: [...fxRatesUsed.values()],
     now,
+    // Yalnızca Özel dağılım (bkz. CUSTOM_PROFILE_ID) PPF'ye bilinçli olarak
+    // %0 verildiğinde artığın Cari Hesap'ta kalmasını ister. Hazır risk
+    // profilleri (yayınlanmış modeldeki gerçek UUID profil id'leri) HER
+    // ZAMAN "MONEY_MARKET" politikasını alır — bu, motorun varsayılanıyla
+    // birebir aynıdır ve hiçbir koşulda davranışlarını değiştirmez.
+    roundingRemainderPolicy: profile.profileId === CUSTOM_PROFILE_ID ? "CASH_IF_MONEY_MARKET_ZERO" : "MONEY_MARKET",
   };
 }

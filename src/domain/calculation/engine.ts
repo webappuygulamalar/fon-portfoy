@@ -150,6 +150,17 @@ export function calculatePortfolio(
     return blockedResult(input, blockReasons, depositAmount);
   }
 
+  // PPF'nin PLANLANAN yüzdesi bilinmeden artığın nereye gideceğine karar
+  // verilemez — bu yüzden PPF yüzdesi, fon döngüsünden ÖNCE okunur.
+  const mmPercentage = pctOf(MONEY_MARKET);
+  const roundingRemainderPolicy = input.roundingRemainderPolicy ?? "MONEY_MARKET";
+  // Yalnızca Özel dağılımın kullandığı "CASH_IF_MONEY_MARKET_ZERO"
+  // politikasında VE PPF tam %0 iken devreye girer. Hazır risk profilleri
+  // her zaman "MONEY_MARKET" politikasını kullanır (bkz. buildInput.ts) —
+  // bu bayrak onlar için asla true olmaz, davranışları değişmez.
+  const suppressMoneyMarketRemainder =
+    roundingRemainderPolicy === "CASH_IF_MONEY_MARKET_ZERO" && mmPercentage === 0;
+
   let carriedToMoneyMarket = ZERO;
   const fundLines: FundLineResult[] = [];
 
@@ -160,7 +171,14 @@ export function calculatePortfolio(
     const shareCount = targetAmount.div(price.unitPriceTRY).floor();
     const actualAmount = shareCount.mul(price.unitPriceTRY);
     const remainder = targetAmount.minus(actualAmount);
-    carriedToMoneyMarket = carriedToMoneyMarket.plus(remainder);
+    // Varsayılan politikada bu artık her zaman PPF'ye eklenir. Kullanıcı
+    // Özel dağılımda PPF'ye bilinçli olarak %0 verdiyse (suppress=true) bu
+    // artık PPF'nin hedefine hiç eklenmez; aşağıdaki cashBalance hesabı
+    // (total - mevduat - yatırılan) bunu otomatik olarak Cari Hesap'a
+    // yansıtır — ayrı bir "cari hesaba ekle" adımına gerek yoktur.
+    if (!suppressMoneyMarketRemainder) {
+      carriedToMoneyMarket = carriedToMoneyMarket.plus(remainder);
+    }
 
     fundLines.push({
       assetClass: ac,
@@ -183,7 +201,6 @@ export function calculatePortfolio(
   }
 
   const mmPrice = resolved.get(MONEY_MARKET)!;
-  const mmPercentage = pctOf(MONEY_MARKET);
   const mmTargetAmount = total.mul(mmPercentage).div(100);
   const mmAvailable = mmTargetAmount.plus(carriedToMoneyMarket);
   const mmShareCount = mmAvailable.div(mmPrice.unitPriceTRY).floor();
@@ -215,8 +232,21 @@ export function calculatePortfolio(
     .plus(mmActualAmount);
 
   const cashBalance = total.minus(depositAmount).minus(investedInFunds);
+  // Varsayılan politikada tüm hisse bazlı artıklar PPF'de tek bir pay
+  // hesabında birleşir, bu yüzden geçerli cari hesap bakiyesi her zaman PPF
+  // biriminden küçüktür (mevcut/eski davranış — DEĞİŞMEDİ). PPF artığı
+  // bastırılmışsa (suppressMoneyMarketRemainder) her aktif (yüzdesi > 0)
+  // hisse bazlı fonun kendi artığı BAĞIMSIZ olarak cari hesapta kalabilir;
+  // üst sınır o fonların birim fiyatları toplamıdır. Aktif fon yoksa (tüm
+  // yüzdeler 0) artık da matematiksel olarak tam 0'dır.
+  const cashUpperBound = suppressMoneyMarketRemainder
+    ? (SHARE_BASED_ASSET_CLASSES as FundAssetClass[])
+        .filter((ac) => pctOf(ac) > 0)
+        .reduce((sum, ac) => sum.plus(resolved.get(ac)!.unitPriceTRY), ZERO)
+    : mmPrice.unitPriceTRY;
   const isCashBalanceValid =
-    cashBalance.gte(0) && cashBalance.lt(mmPrice.unitPriceTRY);
+    cashBalance.gte(0) &&
+    (cashUpperBound.eq(0) ? cashBalance.eq(0) : cashBalance.lt(cashUpperBound));
 
   const grandTotalCheck = depositAmount.plus(investedInFunds).plus(cashBalance);
 

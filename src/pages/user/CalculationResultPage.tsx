@@ -56,7 +56,7 @@ export function CalculationResultPage() {
   }, [selectedProfile, data, overrides]);
 
   const currenciesNeeded = selections.map((s) => s.price?.currency).filter((c): c is string => Boolean(c));
-  const fxRatesByCurrency = useFxRates(currenciesNeeded);
+  const { rates: fxRatesByCurrency, loading: fxLoading, error: fxError } = useFxRates(currenciesNeeded);
 
   const parsedTotal = parseAmountValue(totalAmountInput);
   const isTotalValid = Number.isFinite(parsedTotal) && parsedTotal > 0;
@@ -80,6 +80,29 @@ export function CalculationResultPage() {
   }
   if (!selectedProfile) {
     return <Navigate to="/" replace />;
+  }
+
+  // Kur isteği (varsa) henüz sürüyorken hesaplamayı ÇALIŞTIRMA — aksi halde
+  // `fxRatesByCurrency` henüz boşken motor bunu "gerçekten eksik kur" (
+  // MISSING_FX_RATE) sanır ve bir anlığına yanlış bir hata banner'ı
+  // görünür. Nötr, hata GÖRÜNÜMÜNDE OLMAYAN bir durum gösterilir; TL'den
+  // oluşan bir portföyde (currenciesNeeded boş) `fxLoading` zaten hiç
+  // true olmaz, bu yüzden TL portföyleri bu adımı hiç beklemez.
+  if (fxLoading) {
+    return (
+      <p className="page-subtitle" role="status" aria-live="polite">
+        Kur bilgisi yükleniyor…
+      </p>
+    );
+  }
+
+  // İstek YÜKLENİRKEN değil, İSTEĞİN KENDİSİ (ağ/istisna) başarısız
+  // olduğunda ayrı, anlaşılır bir hata gösterilir — "gerçekten kur yok"
+  // (MISSING_FX_RATE, aşağıda CalculationSummary'de) durumundan farklıdır
+  // ve sonsuz yüklenmeye asla düşülmez (useFxRates her zaman loading'i
+  // false'a çeker).
+  if (fxError) {
+    return <Banner variant="danger">Döviz kuru bilgisi alınamadı: {fxError}</Banner>;
   }
 
   const input = buildCalculationInput(

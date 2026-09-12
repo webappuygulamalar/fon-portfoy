@@ -92,18 +92,37 @@ const mockData: PublishedModelData = {
         FX: "fund-fx",
       },
     },
+    // Yalnızca FX yükleme durumu testlerinde kullanılır (BKY gibi USD
+    // fiyatlı bir fon içerir) — diğer testleri etkilememesi için "p1"den
+    // AYRI, kendi fon id'lerini kullanan bağımsız bir profildir.
+    {
+      profileId: "p-fx-usd",
+      key: "fx-usd-test",
+      name: "FX (USD) Test Profili",
+      description: "",
+      sortOrder: 2,
+      allocations: { DEPOSIT: 40, MONEY_MARKET: 10, BIST_EQUITY: 20, GOLD: 20, FX: 10 },
+      preferredFundIdByAssetClass: {
+        MONEY_MARKET: "fund-mm",
+        BIST_EQUITY: "fund-bist",
+        GOLD: "fund-gold",
+        FX: "fund-fx-usd",
+      },
+    },
   ],
   fundsById: {
     "fund-mm": mkFund({ id: "fund-mm", code: "PKT" }),
     "fund-bist": mkFund({ id: "fund-bist", code: "ZZZ" }),
     "fund-gold": mkFund({ id: "fund-gold", code: "AAA" }),
     "fund-fx": mkFund({ id: "fund-fx", code: "FXX" }),
+    "fund-fx-usd": mkFund({ id: "fund-fx-usd", code: "BKYTEST" }),
   },
   latestPriceByFundId: {
     "fund-mm": mkPrice("fund-mm", "1.5"),
     "fund-bist": mkPrice("fund-bist", "10"),
     "fund-gold": mkPrice("fund-gold", "20"),
     "fund-fx": mkPrice("fund-fx", "5"),
+    "fund-fx-usd": { ...mkPrice("fund-fx-usd", "1.05"), currency: "USD" },
   },
   returnsByFundId: {
     "fund-mm": mkReturn("fund-mm", "1.11"),
@@ -123,11 +142,13 @@ vi.mock("../../hooks/usePublishedModel", () => ({
   usePublishedModel: () => ({ loading: false, error: null, data: mockData }),
 }));
 
-// Test fonlarının tamamı TRY olduğundan gerçek useFxRates zaten {} dönerdi;
-// burada mock'lanması yalnızca gerçek Supabase istemcisinin (supabaseClient.ts)
-// bu birim testinde hiç yüklenmemesini sağlar.
+// useFxRates çağrılabilir bir mock: varsayılanı TRY-only senaryonun gerçek
+// hook'un döneceği değerle (rates:{}, loading:false, error:null) birebir
+// aynıdır; FX yükleme/hata durum testleri bunu test başına
+// mockReturnValue ile geçici olarak değiştirir (bkz. aşağıdaki beforeEach).
+const { useFxRatesMock } = vi.hoisted(() => ({ useFxRatesMock: vi.fn() }));
 vi.mock("../../hooks/useFxRates", () => ({
-  useFxRates: () => ({}),
+  useFxRates: useFxRatesMock,
 }));
 
 function seedSession(overrides: Partial<{ totalAmountInput: string; selectedProfileId: string }> = {}) {
@@ -174,6 +195,7 @@ function renderResultPage(initialPath = "/hesaplama/sonuc") {
 
 beforeEach(() => {
   sessionStorage.clear();
+  useFxRatesMock.mockReturnValue({ rates: {}, loading: false, error: null });
 });
 
 describe("CalculationResultPage — geçersiz/eksik parametre güvenliği", () => {
@@ -289,16 +311,69 @@ describe("CalculationResultPage — Özel dağılım", () => {
     expect(rowContaining("FXX")?.querySelectorAll("td")[1]?.textContent).toBe("%10"); // FX
   });
 
-  it("%0 verilen kategoriler (Para Piyasası Fonu hariç) sonuç satırlarında yer almaz", () => {
+  it("%0 verilen kategoriler sonuç satırlarında yer almaz (PPF de dahil, hedefi ve gerçekleşeni tam sıfırsa)", () => {
     seedCustomSession({ DEPOSIT: 100, MONEY_MARKET: 0, BIST_EQUITY: 0, GOLD: 0, FX: 0 });
     renderResultPage();
 
     expect(rowContaining("ZZZ")).toBeUndefined();
     expect(rowContaining("AAA")).toBeUndefined();
     expect(rowContaining("FXX")).toBeUndefined();
-    // Para Piyasası Fonu, yuvarlama kalanını her zaman taşıyabileceği için
-    // planlanan yüzdesi %0 olsa bile satırı gizlenmez.
-    expect(rowContaining("PKT")).toBeDefined();
+    // PPF hedefi de gerçekleşeni de tam 0 olduğu için (bu senaryoda taşınacak
+    // hiçbir artık da yok) PPF satırı da gizlenir.
+    expect(rowContaining("PKT")).toBeUndefined();
+  });
+
+  it("Özel dağılımda PPF'ye %0 verilip diğer fonlarda tam pay artığı varsa: PPF satırı gizlenir, artık Cari Hesap'a gider, toplam portföy kontrolü birebir tutar", () => {
+    // BIST/GOLD/FX %20'şer, fiyatları (10/20/5 TL) 1.000.005'in %20'sini
+    // (200.001) tam bölmüyor -> her biri 1 TL artık bırakıyor (toplam 3 TL).
+    seedCustomSession(
+      { DEPOSIT: 40, MONEY_MARKET: 0, BIST_EQUITY: 20, GOLD: 20, FX: 20 },
+      { totalAmountInput: "1000005" },
+    );
+    renderResultPage();
+
+    // PPF'nin PLANLANAN %0 tercihi korunuyor: artık PPF'ye hiç eklenmiyor,
+    // hedefi de gerçekleşeni de 0 kaldığı için satırı gösterilmiyor.
+    expect(rowContaining("PKT")).toBeUndefined();
+
+    const cashRow = Array.from(document.querySelectorAll(".data-table tbody tr")).find(
+      (r) => r.querySelector("td")?.textContent?.trim() === "Cari Hesap",
+    ) as HTMLElement;
+    // 1+1+1 = 3 TL, eskiden PPF'ye aktarılırdı; şimdi doğrudan Cari Hesap'ta.
+    expect(cashRow.querySelectorAll("td")[5]?.textContent).toBe("₺3");
+
+    // mevduat + fonlara yatırılan gerçek tutar + cari hesap birebir tutara eşit.
+    const totalRow = screen.getByText("Toplam Portföy").closest(".kv-row") as HTMLElement;
+    expect(totalRow.textContent).toContain("1.000.005");
+
+    // "Cari hesap bakiyesi beklenen aralıkta değil" yanlış-pozitif uyarısı
+    // gösterilmemeli — bu artık beklenen/doğru bir durumdur.
+    expect(screen.queryByText(/Cari hesap bakiyesi beklenen aralıkta değil/)).not.toBeInTheDocument();
+  });
+
+  it("döviz fonunda bir pay bile alınamayacak kadar küçük hedef tutar, PPF %0 iken TAMAMEN Cari Hesap'a gider", () => {
+    // FX %4, toplam 100 -> hedef 4 TL; fiyat 5 TL olduğu için TEK bir pay
+    // bile alınamıyor (shareCount=0, actualAmount=0) — hedefin TAMAMI (4 TL)
+    // artığa dönüşüyor. Eskiden bu PPF'ye aktarılırdı; PPF %0 verildiği için
+    // artık doğrudan Cari Hesap'ta kalmalı.
+    seedCustomSession(
+      { DEPOSIT: 96, MONEY_MARKET: 0, BIST_EQUITY: 0, GOLD: 0, FX: 4 },
+      { totalAmountInput: "100" },
+    );
+    renderResultPage();
+
+    const fxRow = rowContaining("FXX") as HTMLElement;
+    expect(fxRow.querySelectorAll("td")[4]?.textContent).toBe("0"); // pay adedi
+    expect(fxRow.querySelectorAll("td")[5]?.textContent).toBe("₺0"); // hesaplanan tutar
+
+    expect(rowContaining("PKT")).toBeUndefined();
+    const cashRow = Array.from(document.querySelectorAll(".data-table tbody tr")).find(
+      (r) => r.querySelector("td")?.textContent?.trim() === "Cari Hesap",
+    ) as HTMLElement;
+    expect(cashRow.querySelectorAll("td")[5]?.textContent).toBe("₺4");
+
+    const totalRow = screen.getByText("Toplam Portföy").closest(".kv-row") as HTMLElement;
+    expect(totalRow.textContent).toContain("₺100");
   });
 
   it("özel dağılım toplamı %100 değilken (bozuk/eski veri) hesaplama sayfasına yönlendirir", () => {
@@ -337,5 +412,117 @@ describe("CalculationResultPage — Özel dağılım", () => {
       (r) => r.querySelector("td")?.textContent?.trim() === "Mevduat",
     ) as HTMLElement;
     expect(depositRow.querySelectorAll("td")[1]?.textContent).toBe("%40");
+  });
+
+  it("PPF %0 iken bir fon override'ı (fon değiştirmeden dönüş) uygulansa bile PPF baskılama politikası korunur", () => {
+    sessionStorage.setItem(
+      "fonPortfoy.calculatorSelection.v1",
+      JSON.stringify({
+        totalAmountInput: "1000005",
+        selectedProfileId: "custom",
+        overrides: { BIST_EQUITY: "fund-bist" },
+        customAllocations: { DEPOSIT: 40, MONEY_MARKET: 0, BIST_EQUITY: 20, GOLD: 20, FX: 20 },
+      }),
+    );
+    renderResultPage();
+
+    expect(rowContaining("PKT")).toBeUndefined();
+    const cashRow = Array.from(document.querySelectorAll(".data-table tbody tr")).find(
+      (r) => r.querySelector("td")?.textContent?.trim() === "Cari Hesap",
+    ) as HTMLElement;
+    expect(cashRow.querySelectorAll("td")[5]?.textContent).toBe("₺3");
+  });
+});
+
+describe("CalculationResultPage — kur yükleniyor/hata durumları (BKY gibi USD fiyatlı bir fon)", () => {
+  function seedFxUsdSession(selectedProfileId: string, customAllocations?: Record<string, number>) {
+    sessionStorage.setItem(
+      "fonPortfoy.calculatorSelection.v1",
+      JSON.stringify({
+        totalAmountInput: "1000000",
+        selectedProfileId,
+        overrides: {},
+        ...(customAllocations ? { customAllocations } : {}),
+      }),
+    );
+  }
+
+  it("10-11. kur isteği sürerken 'döviz kuru eksik' hatası GÖRÜNMEZ, bunun yerine nötr 'Kur bilgisi yükleniyor…' durumu görünür", () => {
+    useFxRatesMock.mockReturnValue({ rates: {}, loading: true, error: null });
+    seedFxUsdSession("p-fx-usd");
+    renderResultPage();
+
+    const status = screen.getByRole("status");
+    expect(status).toHaveTextContent("Kur bilgisi yükleniyor…");
+    expect(screen.queryByText(/Hesaplama yapılamıyor/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/döviz kuru eksik/)).not.toBeInTheDocument();
+    // Hata görünümünde (banner-danger) DEĞİL.
+    expect(document.querySelector(".banner-danger")).not.toBeInTheDocument();
+  });
+
+  it("12. kur başarıyla gelince hesaplama doğru sonuçla görüntülenir", () => {
+    useFxRatesMock.mockReturnValue({
+      rates: {
+        USD: {
+          id: "fx1",
+          currency: "USD",
+          rate_to_try: "34.10",
+          rate_date: "2026-09-04",
+          source: "TCMB",
+          fetched_at: "2026-09-05T04:00:00Z",
+        },
+      },
+      loading: false,
+      error: null,
+    });
+    seedFxUsdSession("p-fx-usd");
+    renderResultPage();
+
+    expect(screen.getByText("Pay Hesaplama Özeti")).toBeInTheDocument();
+    expect(screen.queryByText(/Hesaplama yapılamıyor/)).not.toBeInTheDocument();
+    expect(rowContaining("BKYTEST")).toBeDefined();
+  });
+
+  it("13. istek başarıyla tamamlanmış ama gerekli kur GERÇEKTEN bulunamamışsa mevcut anlaşılır hata gösterilir", () => {
+    // loading:false, error:null (istek başarısız değil) ama rates boş -> gerçekten eksik.
+    useFxRatesMock.mockReturnValue({ rates: {}, loading: false, error: null });
+    seedFxUsdSession("p-fx-usd");
+    renderResultPage();
+
+    expect(screen.getByText("Hesaplama yapılamıyor.")).toBeInTheDocument();
+    expect(screen.getByText(/döviz kuru eksik/)).toBeInTheDocument();
+  });
+
+  it("14. kur isteği ağ hatasıyla biterse yüklenmede takılı kalmaz, ayrı ve anlaşılır bir hata gösterir", () => {
+    useFxRatesMock.mockReturnValue({ rates: {}, loading: false, error: "network down" });
+    seedFxUsdSession("p-fx-usd");
+    renderResultPage();
+
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(screen.getByText(/Döviz kuru bilgisi alınamadı/)).toBeInTheDocument();
+    expect(screen.getByText(/network down/)).toBeInTheDocument();
+    // Bu, "gerçekten eksik kur" (MISSING_FX_RATE) mesajıyla KARIŞTIRILMAMALI.
+    expect(screen.queryByText(/Hesaplama yapılamıyor\./)).not.toBeInTheDocument();
+  });
+
+  it("15. hazır profil ve Özel profil aynı yükleniyor davranışını kullanır", () => {
+    useFxRatesMock.mockReturnValue({ rates: {}, loading: true, error: null });
+    seedFxUsdSession("custom", { DEPOSIT: 40, MONEY_MARKET: 10, BIST_EQUITY: 20, GOLD: 20, FX: 10 });
+    renderResultPage();
+
+    expect(screen.getByRole("status")).toHaveTextContent("Kur bilgisi yükleniyor…");
+  });
+
+  it("16. TL portföyü (p1, hiç döviz fonu yok) kur bekleme durumundan hiç etkilenmez", () => {
+    // useFxRatesMock varsayılanı zaten { loading:false } - TL profilinin
+    // hiçbir zaman bu duruma girmediğini kanıtlamak için burada da AÇIKÇA
+    // aynı değeri set ediyoruz; asıl "hiç istek atılmaz" garantisi
+    // useFxRates.test.ts'teki hook birim testlerinde doğrulanır.
+    useFxRatesMock.mockReturnValue({ rates: {}, loading: false, error: null });
+    seedSession(); // p1, tamamı TRY
+    renderResultPage();
+
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(screen.getByText("Pay Hesaplama Özeti")).toBeInTheDocument();
   });
 });

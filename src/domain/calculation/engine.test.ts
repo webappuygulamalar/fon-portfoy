@@ -304,6 +304,131 @@ describe("calculatePortfolio — döviz cinsinden fiyatlanan fon", () => {
   });
 });
 
+describe("calculatePortfolio — roundingRemainderPolicy: CASH_IF_MONEY_MARKET_ZERO (Özel dağılım)", () => {
+  function inputWith(
+    allocations: PortfolioCalculationInput["allocations"],
+    totalAmount: number,
+    policy?: PortfolioCalculationInput["roundingRemainderPolicy"],
+  ): PortfolioCalculationInput {
+    return {
+      totalAmount,
+      allocations,
+      now: NOW,
+      roundingRemainderPolicy: policy,
+      fundPrices: {
+        BIST_EQUITY: priceInput("BIST_EQUITY", "ZKP", 10),
+        GOLD: priceInput("GOLD", "ZGD", 20),
+        FX: priceInput("FX", "BKY", 5),
+        MONEY_MARKET: priceInput("MONEY_MARKET", "PKT", 1.5),
+      },
+    };
+  }
+
+  const ppfZeroAllocations: PortfolioCalculationInput["allocations"] = [
+    { assetClass: "DEPOSIT", percentage: 40 },
+    { assetClass: "MONEY_MARKET", percentage: 0 },
+    { assetClass: "BIST_EQUITY", percentage: 20 },
+    { assetClass: "GOLD", percentage: 20 },
+    { assetClass: "FX", percentage: 20 },
+  ];
+
+  it("1. PPF %0 ve diğer fonlarda tam pay artığı varsa PPF'ye hiç yatırım yapılmaz", () => {
+    const result = calculatePortfolio(
+      inputWith(ppfZeroAllocations, 1_000_005, "CASH_IF_MONEY_MARKET_ZERO"),
+    );
+    expect(result.status).toBe("OK");
+    expect(result.carriedToMoneyMarket.toNumber()).toBe(0);
+    expect(result.moneyMarketLine!.targetAmount.toNumber()).toBe(0);
+    expect(result.moneyMarketLine!.actualAmount.toNumber()).toBe(0);
+    expect(result.moneyMarketLine!.shareCount).toBe(0);
+  });
+
+  it("2. Aynı senaryoda üç fonun yuvarlama artığı (1+1+1=3 TL) Cari Hesap'ta kalır", () => {
+    const result = calculatePortfolio(
+      inputWith(ppfZeroAllocations, 1_000_005, "CASH_IF_MONEY_MARKET_ZERO"),
+    );
+    expect(result.cashBalance.toNumber()).toBe(3);
+    expect(result.totals.cashBalance.toNumber()).toBe(3);
+  });
+
+  it("3. Toplam portföy kontrolü (mevduat + fonlar + cari hesap) girdi tutarına birebir eşittir", () => {
+    const result = calculatePortfolio(
+      inputWith(ppfZeroAllocations, 1_000_005, "CASH_IF_MONEY_MARKET_ZERO"),
+    );
+    expect(result.totals.grandTotalCheck.toNumber()).toBe(1_000_005);
+  });
+
+  it("cari hesap bakiyesi geçerlidir (yanlış-pozitif 'beklenen aralıkta değil' uyarısı yok)", () => {
+    const result = calculatePortfolio(
+      inputWith(ppfZeroAllocations, 1_000_005, "CASH_IF_MONEY_MARKET_ZERO"),
+    );
+    expect(result.isCashBalanceValid).toBe(true);
+  });
+
+  it("4. PPF oranı %0'dan büyükse aynı politika altında mevcut aktarım davranışı sürer", () => {
+    const allocations: PortfolioCalculationInput["allocations"] = [
+      { assetClass: "DEPOSIT", percentage: 40 },
+      { assetClass: "MONEY_MARKET", percentage: 10 },
+      { assetClass: "BIST_EQUITY", percentage: 20 },
+      { assetClass: "GOLD", percentage: 20 },
+      { assetClass: "FX", percentage: 10 },
+    ];
+    const withCashPolicy = calculatePortfolio(inputWith(allocations, 1_000_005, "CASH_IF_MONEY_MARKET_ZERO"));
+    const withDefaultPolicy = calculatePortfolio(inputWith(allocations, 1_000_005, "MONEY_MARKET"));
+    // PPF %0 DEĞİLKEN iki politika birbirinden ayırt edilemez — tamamen aynı sonucu verir.
+    expect(withCashPolicy.carriedToMoneyMarket.toNumber()).toBeGreaterThan(0);
+    expect(withCashPolicy.carriedToMoneyMarket.toNumber()).toBe(withDefaultPolicy.carriedToMoneyMarket.toNumber());
+    expect(withCashPolicy.moneyMarketLine!.actualAmount.toNumber()).toBe(
+      withDefaultPolicy.moneyMarketLine!.actualAmount.toNumber(),
+    );
+    expect(withCashPolicy.cashBalance.toNumber()).toBe(withDefaultPolicy.cashBalance.toNumber());
+  });
+
+  it("5. Politika belirtilmezse (hazır profillerin gerçek çağrısı) PPF %0 olsa bile eski davranış (artık PPF'ye eklenir) sürer", () => {
+    // roundingRemainderPolicy verilmiyor -> motorun varsayılanı "MONEY_MARKET".
+    // Hazır profillerde bugün MM %0 olan bir profil yok, ama bu test motorun
+    // varsayılanının GERİYE UYUMLU kaldığını (yeni davranışın yalnızca açıkça
+    // "CASH_IF_MONEY_MARKET_ZERO" istendiğinde devreye girdiğini) kanıtlar.
+    const result = calculatePortfolio(inputWith(ppfZeroAllocations, 1_000_005));
+    expect(result.carriedToMoneyMarket.toNumber()).toBe(3);
+    expect(result.moneyMarketLine!.actualAmount.toNumber()).toBeGreaterThan(0);
+    expect(result.cashBalance.toNumber()).toBeLessThan(3);
+  });
+
+  it("6. PPF hedefi ve gerçekleşeni tam sıfırsa (tüm fon sınıfları %0) sonuçta PPF için taşınacak hiçbir tutar yoktur", () => {
+    const allZero: PortfolioCalculationInput["allocations"] = [
+      { assetClass: "DEPOSIT", percentage: 100 },
+      { assetClass: "MONEY_MARKET", percentage: 0 },
+      { assetClass: "BIST_EQUITY", percentage: 0 },
+      { assetClass: "GOLD", percentage: 0 },
+      { assetClass: "FX", percentage: 0 },
+    ];
+    const result = calculatePortfolio(inputWith(allZero, 1_000_000, "CASH_IF_MONEY_MARKET_ZERO"));
+    expect(result.moneyMarketLine!.targetAmount.toNumber()).toBe(0);
+    expect(result.moneyMarketLine!.actualAmount.toNumber()).toBe(0);
+    expect(result.cashBalance.toNumber()).toBe(0);
+    expect(result.isCashBalanceValid).toBe(true);
+  });
+
+  it("7. Döviz fonunda bir pay bile alınamayacak kadar küçük hedef tutar, PPF %0 iken TAMAMEN Cari Hesap'a gider", () => {
+    const allocations: PortfolioCalculationInput["allocations"] = [
+      { assetClass: "DEPOSIT", percentage: 96 },
+      { assetClass: "MONEY_MARKET", percentage: 0 },
+      { assetClass: "BIST_EQUITY", percentage: 0 },
+      { assetClass: "GOLD", percentage: 0 },
+      { assetClass: "FX", percentage: 4 },
+    ];
+    // hedef = 100 * %4 = 4 TL; FX fiyatı 5 TL -> tek pay bile alınamaz.
+    const result = calculatePortfolio(inputWith(allocations, 100, "CASH_IF_MONEY_MARKET_ZERO"));
+    const fx = result.fundLines.find((l) => l.assetClass === "FX")!;
+    expect(fx.shareCount).toBe(0);
+    expect(fx.actualAmount.toNumber()).toBe(0);
+    expect(fx.remainder.toNumber()).toBe(4);
+    expect(result.moneyMarketLine!.actualAmount.toNumber()).toBe(0);
+    expect(result.cashBalance.toNumber()).toBe(4);
+  });
+});
+
 describe("calculatePortfolio — geçersiz model dağılımı", () => {
   it("toplam %100 olmayan dağılımda hata fırlatır (admin tarafında engellenmesi gereken durum)", () => {
     const input: PortfolioCalculationInput = {

@@ -31,12 +31,29 @@ export interface FxRateInput {
   source: string;
 }
 
+/**
+ * Para piyasası fonu (PPF) dışındaki fonların tam pay yuvarlama artığının
+ * nereye aktarılacağını belirler.
+ * - "MONEY_MARKET" (varsayılan, GERİYE UYUMLU): artık her zaman PPF
+ *   hedefine eklenir — tüm hazır risk profillerinin bugüne kadarki
+ *   davranışı budur ve bu politika seçiliyken hiçbir koşulda değişmez.
+ * - "CASH_IF_MONEY_MARKET_ZERO": yalnızca PPF'nin PLANLANAN yüzdesi tam
+ *   olarak 0 ise artık PPF'ye eklenmez, doğrudan cari hesapta bırakılır
+ *   (kullanıcının PPF'ye bilinçli olarak %0 verdiği Özel dağılım için).
+ *   PPF yüzdesi 0'dan büyükse bu politika "MONEY_MARKET" ile birebir
+ *   aynı şekilde davranır — davranış farkı SADECE PPF tam %0 olduğunda
+ *   ortaya çıkar.
+ */
+export type RoundingRemainderPolicy = "MONEY_MARKET" | "CASH_IF_MONEY_MARKET_ZERO";
+
 export interface PortfolioCalculationInput {
   totalAmount: Decimal.Value;
   allocations: AllocationInput[];
   fundPrices: Partial<Record<FundAssetClass, FundPriceInput>>;
   fxRates?: FxRateInput[];
   now?: Date;
+  /** Belirtilmezse "MONEY_MARKET" (mevcut/eski davranış) kullanılır. */
+  roundingRemainderPolicy?: RoundingRemainderPolicy;
 }
 
 export type CalculationBlockReason =
