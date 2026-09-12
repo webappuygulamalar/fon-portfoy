@@ -60,6 +60,7 @@ function renderPage() {
       <CalculatorSelectionProvider>
         <Routes>
           <Route path="/" element={<CalculatorPage />} />
+          <Route path="/hesaplama/ozel" element={<div>ÖZEL DAĞILIM SAYFASI</div>} />
           <Route path="/hesaplama/sonuc" element={<div>SONUÇ SAYFASI</div>} />
         </Routes>
       </CalculatorSelectionProvider>
@@ -142,10 +143,6 @@ function customCard(): HTMLElement {
   return cards[cards.length - 1] as HTMLElement;
 }
 
-function pctInput(label: string): HTMLInputElement {
-  return screen.getByLabelText(label) as HTMLInputElement;
-}
-
 describe("CalculatorPage — Özel kartı", () => {
   it("hazır profillerden sonra, aynı tasarım dilinde (aynı sınıf) görünür", () => {
     renderPage();
@@ -155,118 +152,68 @@ describe("CalculatorPage — Özel kartı", () => {
     expect(cards[2].textContent).toContain("Yatırım dağılımınızı kendiniz oluşturun.");
   });
 
-  it("gerçek bir <button>'dır — Tab/Enter/Space ile doğal klavye erişimi sağlar", () => {
+  it("gerçek bir <button>'dır — Tab/Enter/Space ile doğal klavye erişimi sağlar; toggle olmadığı için aria-pressed KULLANMAZ", () => {
     renderPage();
     const card = customCard();
     expect(card.tagName).toBe("BUTTON");
     expect(card).toHaveAttribute("type", "button");
     expect(card).not.toHaveAttribute("tabindex", "-1");
+    expect(card).not.toHaveAttribute("aria-pressed");
   });
 
-  it("seçildiğinde aynı sayfada özel dağılım düzenleyicisi hemen açılır", () => {
-    renderPage();
-    expect(screen.queryByTestId("custom-allocation-editor")).not.toBeInTheDocument();
-    fireEvent.click(customCard());
-    expect(screen.getByTestId("custom-allocation-editor")).toBeInTheDocument();
-    expect(customCard()).toHaveAttribute("aria-pressed", "true");
-  });
-
-  it("gerçek bir risk profiline geçince düzenleyici kapanır ve özel oranlar hesaplamaya karışmaz", () => {
+  it("tıklanınca AYNI SAYFADA inline bir düzenleyici AÇMAZ, bunun yerine ayrı #/hesaplama/ozel rotasına yönlendirir", () => {
     renderPage();
     fireEvent.click(customCard());
-    fireEvent.change(pctInput("Döviz Katılım/Borçlanma Fonu"), { target: { value: "100" } });
-    expect(screen.getByTestId("custom-allocation-editor")).toBeInTheDocument();
 
-    fireEvent.click(document.querySelectorAll(".risk-profile-card")[0]); // "Düşük 1"
+    // Ayrı rotaya gidildi: ana sayfanın hiçbir parçası (kartlar, satır içi
+    // düzenleyici) artık DOM'da değil, hedef sayfanın içeriği görünüyor.
+    expect(screen.getByText("ÖZEL DAĞILIM SAYFASI")).toBeInTheDocument();
     expect(screen.queryByTestId("custom-allocation-editor")).not.toBeInTheDocument();
+    expect(document.querySelector(".custom-allocation-row")).not.toBeInTheDocument();
   });
 });
 
-describe("CalculatorPage — özel dağılım toplam kontrolü", () => {
-  beforeEach(() => {
-    renderPage();
-    fireEvent.click(customCard());
-  });
-
-  it("%99 toplamda tamamlanmamış uyarısı gösterir ve hesapla butonunu devre dışı bırakır", () => {
-    fireEvent.change(pctInput("Mevduat"), { target: { value: "99" } });
-    fireEvent.change(screen.getByLabelText("Toplam Portföy Tutarı (TL)"), { target: { value: "1000000" } });
-
-    expect(screen.getByText(/Toplamın %100 olması için %1 daha dağıtmalısınız/)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Portföyü Hesapla" })).toBeDisabled();
-    expect(screen.getByText(/Devam etmek için özel dağılım toplamını %100 yapın/)).toBeInTheDocument();
-  });
-
-  it("%100 toplamda olumlu (yeşil) durum gösterir ve hesapla aktif olur", () => {
-    fireEvent.change(pctInput("Mevduat"), { target: { value: "100" } });
-    fireEvent.change(screen.getByLabelText("Toplam Portföy Tutarı (TL)"), { target: { value: "1000000" } });
-
-    expect(screen.getByText("Toplam %100 — hesaplamaya hazır.")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Portföyü Hesapla" })).not.toBeDisabled();
-  });
-
-  it("%101 toplamda aşım uyarısı gösterir ve hesapla butonunu devre dışı bırakır", () => {
-    fireEvent.change(pctInput("Mevduat"), { target: { value: "100" } });
-    fireEvent.change(pctInput("Altın Katılım Fonu"), { target: { value: "1" } });
-    fireEvent.change(screen.getByLabelText("Toplam Portföy Tutarı (TL)"), { target: { value: "1000000" } });
-
-    expect(screen.getByText(/Toplam %100'ü %1 aşıyor/)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Portföyü Hesapla" })).toBeDisabled();
-  });
-
-  it("negatif değer 0'a, 100'den büyük değer 100'e kırpılır", () => {
-    const input = pctInput("Mevduat");
-    fireEvent.change(input, { target: { value: "-5" } });
-    expect(input.value).toBe("0");
-    fireEvent.change(input, { target: { value: "250" } });
-    expect(input.value).toBe("100");
-  });
-
-  it("tüm tutar tek bir kategoriye %100 verilebilir", () => {
-    fireEvent.change(pctInput("Döviz Katılım/Borçlanma Fonu"), { target: { value: "100" } });
-    expect(screen.getByText("Toplam %100 — hesaplamaya hazır.")).toBeInTheDocument();
-  });
-
-  it("bazı kategoriler %0 bırakılabilir (toplamı 100 olduğu sürece)", () => {
-    fireEvent.change(pctInput("Mevduat"), { target: { value: "60" } });
-    fireEvent.change(pctInput("Para Piyasası Katılım Fonu"), { target: { value: "40" } });
-    // BIST_EQUITY, GOLD, FX %0 bırakıldı.
-    expect(screen.getByText("Toplam %100 — hesaplamaya hazır.")).toBeInTheDocument();
-    expect(pctInput("BIST Katılım Hisse Fonu").value).toBe("0");
-  });
-
-  it("tutar girilip özel dağılım %100 olunca hesapla /hesaplama/sonuc'a götürür", () => {
-    fireEvent.change(pctInput("Mevduat"), { target: { value: "100" } });
-    fireEvent.change(screen.getByLabelText("Toplam Portföy Tutarı (TL)"), { target: { value: "1000000" } });
-    fireEvent.click(screen.getByRole("button", { name: "Portföyü Hesapla" }));
-    expect(screen.getByText("SONUÇ SAYFASI")).toBeInTheDocument();
-  });
-});
-
-describe("CalculatorPage — özel dağılımın oturum boyunca korunması", () => {
-  it("sayfa yeniden render edildiğinde (sessionStorage) girilen yüzdeler korunur", () => {
-    const { unmount } = renderPage();
-    fireEvent.click(customCard());
-    fireEvent.change(pctInput("Altın Katılım Fonu"), { target: { value: "35" } });
-    unmount();
-
-    renderPage();
-    fireEvent.click(customCard());
-    expect(pctInput("Altın Katılım Fonu").value).toBe("35");
-  });
-
-  it("bozuk sessionStorage verisiyle sayfa güvenle %0'lardan açılır", () => {
+describe("CalculatorPage — daha önce tamamlanmış bir özel dağılımla ana sayfaya dönüş", () => {
+  function seedCompleteCustomSession() {
     sessionStorage.setItem(
       "fonPortfoy.calculatorSelection.v1",
       JSON.stringify({
         totalAmountInput: "1000000",
         selectedProfileId: "custom",
         overrides: {},
-        customAllocations: { DEPOSIT: "elli", GOLD: 999 },
+        customAllocations: { DEPOSIT: 40, MONEY_MARKET: 10, BIST_EQUITY: 20, GOLD: 20, FX: 10 },
+      }),
+    );
+  }
+
+  it("Özel kartı 'seçili' görünür (görsel — aria-pressed değil) ve inline düzenleyici YİNE DE açılmaz", () => {
+    seedCompleteCustomSession();
+    renderPage();
+    expect(customCard()).toHaveClass("selected");
+    expect(screen.queryByTestId("custom-allocation-editor")).not.toBeInTheDocument();
+  });
+
+  it("Portföyü Hesapla doğrudan aktiftir ve tıklanınca /hesaplama/sonuc'a gider (Özel sayfasına tekrar gitmeye gerek yok)", () => {
+    seedCompleteCustomSession();
+    renderPage();
+    const button = screen.getByRole("button", { name: "Portföyü Hesapla" });
+    expect(button).not.toBeDisabled();
+    fireEvent.click(button);
+    expect(screen.getByText("SONUÇ SAYFASI")).toBeInTheDocument();
+  });
+
+  it("özel dağılım toplamı %100 değilse buton yine devre dışıdır ve doğru doğrulama mesajını gösterir", () => {
+    sessionStorage.setItem(
+      "fonPortfoy.calculatorSelection.v1",
+      JSON.stringify({
+        totalAmountInput: "1000000",
+        selectedProfileId: "custom",
+        overrides: {},
+        customAllocations: { DEPOSIT: 40, MONEY_MARKET: 10, BIST_EQUITY: 20, GOLD: 20, FX: 9 }, // toplam 99
       }),
     );
     renderPage();
-    expect(pctInput("Mevduat").value).toBe("0");
-    expect(pctInput("Altın Katılım Fonu").value).toBe("0");
+    expect(screen.getByRole("button", { name: "Portföyü Hesapla" })).toBeDisabled();
+    expect(screen.getByText(/Devam etmek için özel dağılım toplamını %100 yapın/)).toBeInTheDocument();
   });
 });

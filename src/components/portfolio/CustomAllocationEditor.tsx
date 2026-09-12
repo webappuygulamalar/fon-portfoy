@@ -19,10 +19,13 @@ interface CustomAllocationEditorProps {
 }
 
 /**
- * "Özel" kartı seçildiğinde açılan, kullanıcının 5 varlık sınıfı için
- * doğrudan yüzde yazabildiği düzenleyici. Canlı donut grafik için mevcut
- * bağımlılıksız `DonutChart` bileşeni yeniden kullanılır — yeni bir grafik
- * kütüphanesi eklenmez.
+ * Ayrı `#/hesaplama/ozel` sayfasının (bkz. CustomAllocationPage) içeriği:
+ * kullanıcının 5 varlık sınıfı için doğrudan yüzde yazabildiği düzenleyici.
+ * Mobilde tek sütun (alanlar üstte, donut altta — kullanıcı büyük bir kart/
+ * grafiği geçmeden yüzde alanlarını hemen görür), masaüstünde iki sütun
+ * (alanlar solda, donut sağda). Canlı donut grafik için mevcut bağımlılıksız
+ * `DonutChart` bileşeni yeniden kullanılır — yeni bir grafik kütüphanesi
+ * eklenmez.
  */
 export function CustomAllocationEditor({ allocations, onChange }: CustomAllocationEditorProps) {
   const total = customAllocationTotal(allocations);
@@ -50,52 +53,80 @@ export function CustomAllocationEditor({ allocations, onChange }: CustomAllocati
   }
 
   return (
-    <div className="card custom-allocation-editor stack" data-testid="custom-allocation-editor">
-      <p className="disclaimer">Bu dağılım kullanıcı tarafından oluşturulur ve hazır bir risk profili değildir.</p>
+    <div className="custom-allocation-layout">
+      {/* Sıra (mobil, tek sütun): yüzde alanları -> Toplam/Kalan durumu.
+          Masaüstünde bu blok SOLDA, donut SAĞDA gösterilir (bkz. CSS). */}
+      <div className="card custom-allocation-fields stack" data-testid="custom-allocation-editor">
+        <p className="disclaimer">Bu dağılım kullanıcı tarafından oluşturulur ve hazır bir risk profili değildir.</p>
 
-      <div className="stack-sm">
-        {ASSET_CLASSES.map((ac) => (
-          <div className="custom-allocation-row" key={ac}>
-            <label className="field-label custom-allocation-label" htmlFor={`custom-pct-${ac}`}>
-              {ASSET_CLASS_LABELS[ac]}
-            </label>
-            <div className="custom-allocation-input-group">
-              <button
-                type="button"
-                className="btn btn-secondary custom-allocation-step"
-                aria-label={`${ASSET_CLASS_LABELS[ac]} yüzdesini bir azalt`}
-                onClick={() => step(ac, -1)}
-              >
-                −
-              </button>
-              <input
-                id={`custom-pct-${ac}`}
-                className="input tabular-nums custom-allocation-input"
-                type="number"
-                inputMode="numeric"
-                min={0}
-                max={100}
-                step={1}
-                value={allocations[ac] ?? 0}
-                onChange={(e) => handleTextChange(ac, e.target.value)}
-              />
-              <span className="custom-allocation-suffix" aria-hidden="true">
-                %
-              </span>
-              <button
-                type="button"
-                className="btn btn-secondary custom-allocation-step"
-                aria-label={`${ASSET_CLASS_LABELS[ac]} yüzdesini bir artır`}
-                onClick={() => step(ac, 1)}
-              >
-                +
-              </button>
+        <div className="stack-sm custom-allocation-rows">
+          {ASSET_CLASSES.map((ac) => (
+            <div className="custom-allocation-row" key={ac}>
+              <label className="field-label custom-allocation-label" htmlFor={`custom-pct-${ac}`}>
+                {ASSET_CLASS_LABELS[ac]}
+              </label>
+              <div className="custom-allocation-input-group">
+                <button
+                  type="button"
+                  className="btn btn-secondary custom-allocation-step"
+                  aria-label={`${ASSET_CLASS_LABELS[ac]} yüzdesini bir azalt`}
+                  onClick={() => step(ac, -1)}
+                >
+                  −
+                </button>
+                <input
+                  id={`custom-pct-${ac}`}
+                  className="input tabular-nums custom-allocation-input"
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  max={100}
+                  step={1}
+                  value={allocations[ac] ?? 0}
+                  onChange={(e) => handleTextChange(ac, e.target.value)}
+                />
+                <span className="custom-allocation-suffix" aria-hidden="true">
+                  %
+                </span>
+                <button
+                  type="button"
+                  className="btn btn-secondary custom-allocation-step"
+                  aria-label={`${ASSET_CLASS_LABELS[ac]} yüzdesini bir artır`}
+                  onClick={() => step(ac, 1)}
+                >
+                  +
+                </button>
+              </div>
             </div>
+          ))}
+        </div>
+
+        <div className="stack-sm custom-allocation-total-status">
+          <div className="kv-row">
+            <span className="k">Toplam</span>
+            <span className="tabular-nums">{formatPercent(total)}</span>
           </div>
-        ))}
+          <div className="kv-row">
+            <span className="k">Kalan</span>
+            <span className="tabular-nums">
+              {remaining >= 0 ? formatPercent(remaining) : `-${formatPercent(Math.abs(remaining))}`}
+            </span>
+          </div>
+
+          {complete ? (
+            <Banner variant="info">Toplam %100 — hesaplamaya hazır.</Banner>
+          ) : (
+            <Banner variant="warning">
+              {remaining > 0
+                ? `Toplamın %100 olması için %${remaining} daha dağıtmalısınız.`
+                : `Toplam %100'ü %${Math.abs(remaining)} aşıyor; bazı yüzdeleri azaltın.`}
+            </Banner>
+          )}
+        </div>
       </div>
 
-      <div className="custom-allocation-chart-row">
+      {/* Donut + legend: mobilde alanların ALTINDA, masaüstünde SAĞ sütunda. */}
+      <div className="custom-allocation-chart-col">
         <DonutChart segments={segments} size={140} strokeWidth={20} />
         {segments.length > 0 && (
           <span className="risk-profile-legend custom-allocation-legend">
@@ -109,29 +140,6 @@ export function CustomAllocationEditor({ allocations, onChange }: CustomAllocati
           </span>
         )}
       </div>
-
-      <div className="stack-sm">
-        <div className="kv-row">
-          <span className="k">Toplam</span>
-          <span className="tabular-nums">{formatPercent(total)}</span>
-        </div>
-        <div className="kv-row">
-          <span className="k">Kalan</span>
-          <span className="tabular-nums">
-            {remaining >= 0 ? formatPercent(remaining) : `-${formatPercent(Math.abs(remaining))}`}
-          </span>
-        </div>
-      </div>
-
-      {complete ? (
-        <Banner variant="info">Toplam %100 — hesaplamaya hazır.</Banner>
-      ) : (
-        <Banner variant="warning">
-          {remaining > 0
-            ? `Toplamın %100 olması için %${remaining} daha dağıtmalısınız.`
-            : `Toplam %100'ü %${Math.abs(remaining)} aşıyor; bazı yüzdeleri azaltın.`}
-        </Banner>
-      )}
     </div>
   );
 }

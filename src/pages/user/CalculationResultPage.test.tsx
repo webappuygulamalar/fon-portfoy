@@ -186,6 +186,7 @@ function renderResultPage(initialPath = "/hesaplama/sonuc") {
       <CalculatorSelectionProvider>
         <Routes>
           <Route path="/" element={<div>HESAPLAMA GİRİŞ SAYFASI</div>} />
+          <Route path="/hesaplama/ozel" element={<div>ÖZEL DAĞILIM SAYFASI</div>} />
           <Route path="/hesaplama/sonuc" element={<CalculationResultPage />} />
         </Routes>
       </CalculatorSelectionProvider>
@@ -296,6 +297,14 @@ describe("CalculationResultPage — Özel dağılım", () => {
     renderResultPage();
     expect(screen.getByText("Özel Dağılım")).toBeInTheDocument();
     expect(screen.getByText("Özel dağılımınıza göre pay hesaplama özetiniz.")).toBeInTheDocument();
+  });
+
+  it("Özel dağılımda 'Geri dön' ana sayfaya değil #/hesaplama/ozel'e döner", () => {
+    seedCustomSession({ DEPOSIT: 40, MONEY_MARKET: 10, BIST_EQUITY: 20, GOLD: 20, FX: 10 });
+    renderResultPage();
+    fireEvent.click(screen.getByRole("button", { name: /Geri dön/ }));
+    expect(screen.getByText("ÖZEL DAĞILIM SAYFASI")).toBeInTheDocument();
+    expect(screen.queryByText("HESAPLAMA GİRİŞ SAYFASI")).not.toBeInTheDocument();
   });
 
   it("seçilen özel oranlar sonuç tablosunda doğru gösterilir", () => {

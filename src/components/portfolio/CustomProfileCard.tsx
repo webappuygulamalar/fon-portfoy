@@ -1,4 +1,5 @@
 interface CustomProfileCardProps {
+  /** Yalnızca GÖRSEL vurgu içindir (kullanıcının şu an aktif seçimi Özel mi) — bir toggle DEĞİLDİR. */
   selected: boolean;
   onSelect: () => void;
 }
@@ -8,16 +9,20 @@ interface CustomProfileCardProps {
  * beşinci, sabit kart. Admin tarafından yayınlanan bir risk profili
  * DEĞİLDİR — `ProfileModel` listesine hiçbir zaman girmez, dolayısıyla
  * Supabase'e yeni bir risk profili olarak asla kaydedilmez (bkz.
- * `CUSTOM_PROFILE_ID`). Aynı `risk-profile-card` sınıfını ve gerçek bir
- * `<button>` kullandığı için klavye (Tab/Enter/Space) ve odak stilleri
- * diğer kartlarla birebir aynıdır.
+ * `CUSTOM_PROFILE_ID`).
+ *
+ * Diğer kartlardan farklı olarak bu kart bir TOGGLE değil, ayrı bir adıma
+ * (`#/hesaplama/ozel`) GÖTÜREN bir eylemdir — bu yüzden bilinçli olarak
+ * `aria-pressed` KULLANMAZ (o, aynı sayfada kalan bir basılı/basılı-değil
+ * durumu ifade eder). Gerçek bir `<button type="button">` olması, Tab ile
+ * odaklanabilmeyi ve hem Enter hem Space ile açılabilmeyi (native buton
+ * davranışı) garanti eder.
  */
 export function CustomProfileCard({ selected, onSelect }: CustomProfileCardProps) {
   return (
     <button
       type="button"
       className={`risk-profile-card custom-profile-card${selected ? " selected" : ""}`}
-      aria-pressed={selected}
       onClick={onSelect}
     >
       <span className="risk-profile-card-name">Özel</span>
@@ -33,7 +38,19 @@ export function CustomProfileCard({ selected, onSelect }: CustomProfileCardProps
         </svg>
       </span>
 
-      <span className="risk-profile-card-desc">Yatırım dağılımınızı kendiniz oluşturun.</span>
+      <span className="risk-profile-card-desc custom-profile-desc">
+        Yatırım dağılımınızı kendiniz oluşturun.
+        <svg
+          className="custom-profile-chevron"
+          aria-hidden="true"
+          width="16"
+          height="16"
+          viewBox="0 0 16 16"
+          fill="none"
+        >
+          <path d="M6 3.5 10.5 8 6 12.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </span>
     </button>
   );
 }

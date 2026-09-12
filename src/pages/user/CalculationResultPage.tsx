@@ -117,7 +117,10 @@ export function CalculationResultPage() {
 
   return (
     <div className="stack">
-      <button className="btn btn-secondary" onClick={() => navigate("/")}>
+      {/* Özel dağılımda "Geri dön", ana sayfaya değil dedike düzenleyiciye
+          (#/hesaplama/ozel) döner — hazır profillerin davranışı (ana
+          sayfaya dönüş) DEĞİŞMEDİ. */}
+      <button className="btn btn-secondary" onClick={() => navigate(isCustomSelected ? "/hesaplama/ozel" : "/")}>
         ← Geri dön
       </button>
 

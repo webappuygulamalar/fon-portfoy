@@ -7,20 +7,13 @@ import { Disclaimer } from "../../components/ui/Disclaimer";
 import { Banner } from "../../components/ui/Banner";
 import { RiskProfileSelector } from "../../components/portfolio/RiskProfileSelector";
 import { CustomProfileCard } from "../../components/portfolio/CustomProfileCard";
-import { CustomAllocationEditor } from "../../components/portfolio/CustomAllocationEditor";
 import { CUSTOM_PROFILE_ID, isCustomAllocationComplete } from "../../domain/calculation/customAllocation";
 
 export function CalculatorPage() {
   const navigate = useNavigate();
   const { loading, error, data } = usePublishedModel();
-  const {
-    totalAmountInput,
-    setTotalAmountInput,
-    selectedProfileId,
-    setSelectedProfileId,
-    customAllocations,
-    setCustomAllocationPercentage,
-  } = useCalculatorSelection();
+  const { totalAmountInput, setTotalAmountInput, selectedProfileId, setSelectedProfileId, customAllocations } =
+    useCalculatorSelection();
 
   const parsedTotal = parseAmountValue(totalAmountInput);
   const isTotalValid = Number.isFinite(parsedTotal) && parsedTotal > 0;
@@ -84,16 +77,13 @@ export function CalculatorPage() {
           selectedProfileId={selectedProfileId}
           onSelect={setSelectedProfileId}
         >
-          <CustomProfileCard
-            selected={isCustomSelected}
-            onSelect={() => setSelectedProfileId(CUSTOM_PROFILE_ID)}
-          />
+          {/* Diğer kartların aksine bu bir toggle DEĞİL, ayrı ve odaklanmış
+              bir adıma (#/hesaplama/ozel) götüren bir navigasyondur — aynı
+              sayfada devasa bir satır içi düzenleyici AÇILMAZ (bkz.
+              CustomAllocationPage). */}
+          <CustomProfileCard selected={isCustomSelected} onSelect={() => navigate("/hesaplama/ozel")} />
         </RiskProfileSelector>
       </div>
-
-      {isCustomSelected && (
-        <CustomAllocationEditor allocations={customAllocations} onChange={setCustomAllocationPercentage} />
-      )}
 
       {(!isTotalValid || !hasProfileSelection || (isCustomSelected && !isCustomComplete)) && (
         <p className="disclaimer" style={{ color: "var(--color-warning)" }}>
