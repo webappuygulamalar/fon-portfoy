@@ -1,5 +1,6 @@
 import { ASSET_CLASS_LABELS } from "../../lib/constants";
 import type { PortfolioCalculationResult, FundLineResult } from "../../domain/calculation/types";
+import { isHiddenZeroPercentCategory } from "../../domain/calculation/customAllocation";
 import { formatDateTR, formatNumber, formatPercent, formatTRY } from "../../lib/format";
 import { orderFundLinesForDisplay } from "./fundLineOrder";
 import { Badge } from "../ui/Badge";
@@ -7,6 +8,8 @@ import { Banner } from "../ui/Banner";
 
 interface CalculationSummaryProps {
   result: PortfolioCalculationResult;
+  /** Yalnızca Özel dağılım sonuçlarında %0 kategorileri gizlemek için — bkz. isHiddenZeroPercentCategory. */
+  isCustom: boolean;
 }
 
 const BLOCK_REASON_LABEL: Record<string, string> = {
@@ -14,7 +17,7 @@ const BLOCK_REASON_LABEL: Record<string, string> = {
   MISSING_FX_RATE: "döviz kuru eksik",
 };
 
-export function CalculationSummary({ result }: CalculationSummaryProps) {
+export function CalculationSummary({ result, isCustom }: CalculationSummaryProps) {
   if (result.status === "BLOCKED") {
     return (
       <Banner variant="danger">
@@ -37,28 +40,28 @@ export function CalculationSummary({ result }: CalculationSummaryProps) {
   // son (diğer fonların kalanı eklendikten sonra) hesaplıyor — bkz.
   // engine.ts, burada değiştirilmedi.
   //
-  // %0 verilen bir kategori (ör. Özel dağılımda kullanıcının hiç pay
-  // ayırmadığı bir fon sınıfı) için yatırım satırı GÖSTERİLMEZ — hedef/
-  // gerçekleşen tutar zaten 0'dır, göstermek yanıltıcı bir "boş" satır
-  // yaratır. Para Piyasası Katılım Fonu (PPF) özel: varsayılan
-  // "MONEY_MARKET" yuvarlama politikasında diğer fonların kalanı her zaman
-  // ona eklenir, bu yüzden planlanan yüzdesi %0 olsa bile GERÇEKTEN bir
-  // tutar taşıyabilir — o durumda satırı gizlemek parayı "kaybetmiş" gibi
-  // gösterir. Bu yüzden PPF yalnızca HEDEFİ VE GERÇEKLEŞEN TUTARI birlikte
-  // tam 0 ise gizlenir (Özel dağılımda PPF %0 verilip
-  // "CASH_IF_MONEY_MARKET_ZERO" politikası devredeyken bu koşul sağlanır —
-  // bkz. engine.ts `suppressMoneyMarketRemainder`); diğer 0 durumlarında
-  // (varsayılan politika, ama nadiren gerçek tutar da 0 çıkarsa) yine
-  // güvenle gizlenir çünkü gösterilecek hiçbir gerçek yatırım yoktur.
+  // Özel dağılımda kullanıcının tam %0 verdiği bir kategori için yatırım
+  // satırı HİÇ GÖSTERİLMEZ (bkz. isHiddenZeroPercentCategory — hazır
+  // profillerde bu her zaman false'tur, görünüm değişmez). Para Piyasası
+  // Katılım Fonu (PPF) özel: varsayılan "MONEY_MARKET" yuvarlama
+  // politikasında diğer fonların kalanı her zaman ona eklenir, bu yüzden
+  // planlanan yüzdesi %0 olsa bile GERÇEKTEN bir tutar taşıyabilir — o
+  // durumda satırı gizlemek parayı "kaybetmiş" gibi gösterir. Bu yüzden PPF
+  // için PLANLANAN yüzde değil, HEDEF VE GERÇEKLEŞEN TUTARIN birlikte tam
+  // 0 olup olmadığına bakılır: Özel dağılımda PPF %0 verilip
+  // "CASH_IF_MONEY_MARKET_ZERO" politikası devredeyken hedef/gerçekleşen
+  // zaten planlanan yüzdeyle birlikte sıfırlanır (bkz. engine.ts
+  // `suppressMoneyMarketRemainder`), bu yüzden ayrı bir `isCustom` dalı
+  // GEREKMEZ — tutar bazlı kontrol her iki durumda da doğru sonucu verir.
   const allLines = orderFundLinesForDisplay(result.fundLines, result.moneyMarketLine).filter((line) => {
     if (line.assetClass === "MONEY_MARKET") {
       return !(line.targetAmount.eq(0) && line.actualAmount.eq(0));
     }
-    return line.percentage > 0;
+    return !isHiddenZeroPercentCategory(isCustom, line.percentage);
   });
   const depositPlannedPct =
     result.distribution.find((d) => d.assetClass === "DEPOSIT")?.plannedPercentage ?? 0;
-  const showDepositRow = depositPlannedPct > 0;
+  const showDepositRow = !isHiddenZeroPercentCategory(isCustom, depositPlannedPct);
 
   return (
     <div className="stack">

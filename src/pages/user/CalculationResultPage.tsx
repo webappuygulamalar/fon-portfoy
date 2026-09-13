@@ -166,7 +166,7 @@ export function CalculationResultPage() {
         <p className="section-title" style={{ marginBottom: 12 }}>
           Pay Hesaplama Özeti
         </p>
-        <CalculationSummary result={result} />
+        <CalculationSummary result={result} isCustom={isCustomSelected} />
       </div>
     </div>
   );

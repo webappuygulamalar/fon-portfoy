@@ -38,6 +38,33 @@ export function isCustomAllocationComplete(allocations: Record<AssetClass, numbe
 }
 
 /**
+ * TEK merkezi görünürlük kuralı: Özel dağılımda kullanıcının bir kategoriye
+ * (Mevduat, PPF, Hisse, Altın, Döviz — hepsi aynı kurala tabi) tam %0
+ * verdiği durumda o kategori Model Dağılımı ve Pay Hesaplama Özeti'nin
+ * HİÇBİR görünümünde (masaüstü tablo, mobil kart) gösterilmez — fon kartı,
+ * fiyatı, getirisi, "Fonu değiştir" butonu dahil hiçbir parçası render
+ * edilmez. Yalnızca CSS ile saklama DEĞİLDİR; çağıran taraf bu satırı hiç
+ * render ETMEMELİDİR (bkz. AllocationEditor, CalculationSummary).
+ *
+ * Bu kural YALNIZCA Özel dağılım için geçerlidir (`isCustom=true` iken) —
+ * hazır (yayınlanmış) risk profillerinde `isCustom` her zaman `false`
+ * olduğundan bu fonksiyon onlar için her zaman `false` döner; görünümleri/
+ * hesaplama davranışları hiçbir koşulda etkilenmez.
+ *
+ * Not: Para Piyasası Katılım Fonu (PPF) satırının kendi ayrı bir istisnası
+ * VARDI (varsayılan politikada diğer fonların yuvarlama artığını taşıyıp
+ * %0 planlansa bile gerçek tutar barındırabildiği için yalnızca hedef+
+ * gerçekleşen tutar ikisi de sıfırsa gizlenir — bkz. CalculationSummary).
+ * Bu, `isCustom=true` iken (yani `roundingRemainderPolicy=
+ * CASH_IF_MONEY_MARKET_ZERO` devredeyken) PPF hedefi/gerçekleşeni her
+ * zaman planlanan yüzdeyle birlikte sıfırlanır, bu yüzden PLANLANAN
+ * yüzdeye bakan BU fonksiyonla tutarlıdır — ayrı bir dal GEREKMEZ.
+ */
+export function isHiddenZeroPercentCategory(isCustom: boolean, plannedPercentage: number): boolean {
+  return isCustom && plannedPercentage <= 0;
+}
+
+/**
  * sessionStorage'dan okunan ham (tipsiz) veriyi güvenle doğrulanmış bir
  * dağılıma çevirir. Nesnenin tamamı ya da tek bir alanı beklenen şekilde
  * değilse (bozulmuş/elle değiştirilmiş veri), TÜMÜ sessizce reddedilip

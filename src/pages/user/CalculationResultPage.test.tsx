@@ -443,6 +443,98 @@ describe("CalculationResultPage — Özel dağılım", () => {
   });
 });
 
+function modelDagilimiCards(): HTMLElement[] {
+  const modelDagilimi = screen.getByText("Model Dağılımı").closest(".card") as HTMLElement;
+  return Array.from(modelDagilimi.querySelectorAll(".record-card"));
+}
+
+describe("CalculationResultPage — Özel dağılımda %0 kategoriler HİÇBİR yerde gösterilmez", () => {
+  it("1. Döviz %0 iken Model Dağılımı'nda BKY/Döviz kartı, fiyatı, getirisi ve 'Fonu değiştir' butonu hiç render edilmez", () => {
+    seedCustomSession({ DEPOSIT: 40, MONEY_MARKET: 10, BIST_EQUITY: 20, GOLD: 30, FX: 0 });
+    renderResultPage();
+
+    const cards = modelDagilimiCards();
+    expect(cards.some((c) => c.textContent?.includes("Döviz Katılım/Borçlanma Fonu"))).toBe(false);
+    expect(cards.some((c) => c.textContent?.includes("FXX"))).toBe(false);
+    expect(screen.queryByText(/1,04 USD/)).not.toBeInTheDocument();
+    // Görünür 4 kart: Mevduat + PPF + BIST + Altın; "Fonu değiştir" yalnızca
+    // 3 FON kartında olur (Mevduat'ta hiç yoktu) — Döviz'in kaldırdığı
+    // bağlantı sayıya YANSIMAZ (zaten görünmüyordu), yani hâlâ tam 3.
+    expect(cards).toHaveLength(4);
+    expect(screen.queryAllByRole("link", { name: "Fonu değiştir" })).toHaveLength(3);
+  });
+
+  it("2a. Hisse (BIST) %0 iken Model Dağılımı'nda ZZZ kartı bulunmaz", () => {
+    seedCustomSession({ DEPOSIT: 40, MONEY_MARKET: 10, BIST_EQUITY: 0, GOLD: 30, FX: 20 });
+    renderResultPage();
+    expect(modelDagilimiCards().some((c) => c.textContent?.includes("ZZZ"))).toBe(false);
+  });
+
+  it("2b. Altın (GOLD) %0 iken Model Dağılımı'nda AAA kartı bulunmaz", () => {
+    seedCustomSession({ DEPOSIT: 40, MONEY_MARKET: 10, BIST_EQUITY: 20, GOLD: 0, FX: 30 });
+    renderResultPage();
+    expect(modelDagilimiCards().some((c) => c.textContent?.includes("AAA"))).toBe(false);
+  });
+
+  it("2c. PPF %0 iken Model Dağılımı'nda PKT kartı bulunmaz", () => {
+    seedCustomSession({ DEPOSIT: 40, MONEY_MARKET: 0, BIST_EQUITY: 20, GOLD: 20, FX: 20 });
+    renderResultPage();
+    expect(modelDagilimiCards().some((c) => c.textContent?.includes("PKT"))).toBe(false);
+  });
+
+  it("2d. Mevduat %0 iken Model Dağılımı'nda Mevduat kartı bulunmaz", () => {
+    seedCustomSession({ DEPOSIT: 0, MONEY_MARKET: 20, BIST_EQUITY: 20, GOLD: 20, FX: 40 });
+    renderResultPage();
+    expect(modelDagilimiCards().some((c) => c.querySelector("strong")?.textContent === "Mevduat")).toBe(false);
+  });
+
+  it("3. pozitif yüzde verilen kategoriler Model Dağılımı'nda görünmeye devam eder", () => {
+    seedCustomSession({ DEPOSIT: 40, MONEY_MARKET: 10, BIST_EQUITY: 20, GOLD: 30, FX: 0 });
+    renderResultPage();
+    const cards = modelDagilimiCards();
+    expect(cards.some((c) => c.querySelector("strong")?.textContent === "Mevduat")).toBe(true);
+    expect(cards.some((c) => c.textContent?.includes("PKT"))).toBe(true);
+    expect(cards.some((c) => c.textContent?.includes("ZZZ"))).toBe(true);
+    expect(cards.some((c) => c.textContent?.includes("AAA"))).toBe(true);
+  });
+
+  it("4. Pay Hesaplama Özeti'nin MOBİL kart görünümünde de %0 kategori (Döviz) bulunmaz", () => {
+    seedCustomSession({ DEPOSIT: 40, MONEY_MARKET: 10, BIST_EQUITY: 20, GOLD: 30, FX: 0 });
+    renderResultPage();
+
+    const mobileBlock = document.querySelector(".mobile-only") as HTMLElement;
+    expect(mobileBlock).toBeTruthy();
+    expect(Array.from(mobileBlock.querySelectorAll(".record-card")).some((c) => c.textContent?.includes("FXX"))).toBe(
+      false,
+    );
+  });
+
+  it("5. Cari Hesap satırı bu filtreden etkilenmez, hem masaüstü hem mobilde her zaman render edilir", () => {
+    seedCustomSession({ DEPOSIT: 40, MONEY_MARKET: 10, BIST_EQUITY: 20, GOLD: 30, FX: 0 });
+    renderResultPage();
+
+    const desktopCashRow = Array.from(document.querySelectorAll(".data-table tbody tr")).find(
+      (r) => r.querySelector("td")?.textContent?.trim() === "Cari Hesap",
+    );
+    expect(desktopCashRow).toBeDefined();
+
+    const mobileBlock = document.querySelector(".mobile-only") as HTMLElement;
+    const mobileCashCard = Array.from(mobileBlock.querySelectorAll(".record-card")).find(
+      (c) => c.querySelector("strong")?.textContent === "Cari Hesap",
+    );
+    expect(mobileCashCard).toBeDefined();
+  });
+
+  it("6. hazır profilde (Özel değil) hiçbir kategori %0 olmasa bile bu kural devre dışıdır — regresyon yok", () => {
+    seedSession(); // "p1", DEPOSIT:40, MONEY_MARKET:10, BIST_EQUITY:20, GOLD:20, FX:10 — hiçbiri %0 değil
+    renderResultPage();
+    const cards = modelDagilimiCards();
+    // Hazır profilin tüm kartları (Mevduat + 4 fon) her zamanki gibi görünür.
+    expect(cards).toHaveLength(5);
+    expect(cards.some((c) => c.textContent?.includes("FXX"))).toBe(true);
+  });
+});
+
 describe("CalculationResultPage — kur yükleniyor/hata durumları (BKY gibi USD fiyatlı bir fon)", () => {
   function seedFxUsdSession(selectedProfileId: string, customAllocations?: Record<string, number>) {
     sessionStorage.setItem(

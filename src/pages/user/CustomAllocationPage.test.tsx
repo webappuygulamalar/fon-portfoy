@@ -126,11 +126,18 @@ describe("CustomAllocationPage — toplam kontrolü", () => {
   });
 
   it("negatif değer 0'a, 100'den büyük değer 100'e kırpılır (mevcut artı/eksi davranışı korunur)", () => {
+    // Odaklıyken kullanıcının yazdığı ham metin geçici olarak gösterilir
+    // (bkz. PercentageField draft state); alttaki sayısal state HER
+    // KEYSTROKE'ta zaten kırpılmış olarak güncellenir (Toplam/Kalan bunu
+    // hemen yansıtır) — gösterim, alandan çıkılınca (blur) kırpılmış
+    // gerçek değere döner.
     renderPage();
     const input = pctInput("Mevduat");
     fireEvent.change(input, { target: { value: "-5" } });
+    fireEvent.blur(input);
     expect(input.value).toBe("0");
     fireEvent.change(input, { target: { value: "250" } });
+    fireEvent.blur(input);
     expect(input.value).toBe("100");
   });
 

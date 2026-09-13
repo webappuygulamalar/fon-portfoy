@@ -3,6 +3,7 @@ import { customAllocationTotal, isCustomAllocationComplete } from "../../domain/
 import { formatPercent } from "../../lib/format";
 import { DonutChart, type DonutChartSegment } from "../ui/DonutChart";
 import { Banner } from "../ui/Banner";
+import { PercentageField } from "./PercentageField";
 
 /** Uygulamanın yeşil temasına uygun, 5 kategori için ayrı ayrı renkler (mevcut risk kartlarındaki gibi Mevduat+PPF birleştirilMEZ). */
 const CUSTOM_CATEGORY_COLOR: Record<AssetClass, string> = {
@@ -38,20 +39,6 @@ export function CustomAllocationEditor({ allocations, onChange }: CustomAllocati
     color: CUSTOM_CATEGORY_COLOR[ac],
   }));
 
-  function handleTextChange(assetClass: AssetClass, raw: string) {
-    if (raw.trim() === "") {
-      onChange(assetClass, 0);
-      return;
-    }
-    const parsed = Number(raw);
-    if (!Number.isFinite(parsed)) return;
-    onChange(assetClass, parsed);
-  }
-
-  function step(assetClass: AssetClass, delta: number) {
-    onChange(assetClass, (allocations[assetClass] ?? 0) + delta);
-  }
-
   return (
     <div className="custom-allocation-layout">
       {/* Sıra (mobil, tek sütun): yüzde alanları -> Toplam/Kalan durumu.
@@ -61,43 +48,15 @@ export function CustomAllocationEditor({ allocations, onChange }: CustomAllocati
 
         <div className="stack-sm custom-allocation-rows">
           {ASSET_CLASSES.map((ac) => (
-            <div className="custom-allocation-row" key={ac}>
-              <label className="field-label custom-allocation-label" htmlFor={`custom-pct-${ac}`}>
-                {ASSET_CLASS_LABELS[ac]}
-              </label>
-              <div className="custom-allocation-input-group">
-                <button
-                  type="button"
-                  className="btn btn-secondary custom-allocation-step"
-                  aria-label={`${ASSET_CLASS_LABELS[ac]} yüzdesini bir azalt`}
-                  onClick={() => step(ac, -1)}
-                >
-                  −
-                </button>
-                <input
-                  id={`custom-pct-${ac}`}
-                  className="input tabular-nums custom-allocation-input"
-                  type="number"
-                  inputMode="numeric"
-                  min={0}
-                  max={100}
-                  step={1}
-                  value={allocations[ac] ?? 0}
-                  onChange={(e) => handleTextChange(ac, e.target.value)}
-                />
-                <span className="custom-allocation-suffix" aria-hidden="true">
-                  %
-                </span>
-                <button
-                  type="button"
-                  className="btn btn-secondary custom-allocation-step"
-                  aria-label={`${ASSET_CLASS_LABELS[ac]} yüzdesini bir artır`}
-                  onClick={() => step(ac, 1)}
-                >
-                  +
-                </button>
-              </div>
-            </div>
+            <PercentageField
+              key={ac}
+              id={`custom-pct-${ac}`}
+              label={ASSET_CLASS_LABELS[ac]}
+              value={allocations[ac] ?? 0}
+              onChange={(value) => onChange(ac, value)}
+              decreaseAriaLabel={`${ASSET_CLASS_LABELS[ac]} yüzdesini bir azalt`}
+              increaseAriaLabel={`${ASSET_CLASS_LABELS[ac]} yüzdesini bir artır`}
+            />
           ))}
         </div>
 

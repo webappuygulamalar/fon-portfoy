@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import { ASSET_CLASS_LABELS, type AssetClass } from "../../lib/constants";
 import { resolveFundSelections } from "../../domain/calculation/buildInput";
+import { CUSTOM_PROFILE_ID, isHiddenZeroPercentCategory } from "../../domain/calculation/customAllocation";
 import type { FundAssetClass } from "../../domain/calculation/types";
 import type { ProfileModel } from "../../domain/model/publishedModel";
 import type { FundPriceRow, FundReturnsRow, FundRow } from "../../services/types";
@@ -33,12 +34,18 @@ export function AllocationEditor({
   overrides,
   onResetOverrides,
 }: AllocationEditorProps) {
-  const selections = orderFundSelectionsForDisplay(
+  const isCustom = profile.profileId === CUSTOM_PROFILE_ID;
+  // Özel dağılımda kullanıcının tam %0 verdiği bir kategori Model
+  // Dağılımı'nda da HİÇ render edilmez (fon kartı, fiyatı, "Fonu değiştir"
+  // dahil) — bkz. isHiddenZeroPercentCategory. Hazır profillerde bu her
+  // zaman false'tur, görünüm/davranış değişmez.
+  const visibleSelections = orderFundSelectionsForDisplay(
     resolveFundSelections(profile, fundsById, latestPriceByFundId, overrides),
     profile,
-  );
-  const hasOverrides = selections.some((s) => s.isOverride);
+  ).filter((sel) => !isHiddenZeroPercentCategory(isCustom, profile.allocations[sel.assetClass as AssetClass] ?? 0));
+  const hasOverrides = visibleSelections.some((s) => s.isOverride);
   const depositPct = profile.allocations.DEPOSIT ?? 0;
+  const showDeposit = !isHiddenZeroPercentCategory(isCustom, depositPct);
 
   return (
     <div className="stack">
@@ -51,14 +58,16 @@ export function AllocationEditor({
         </div>
       )}
 
-      <div className="record-card">
-        <div className="row-between">
-          <strong>{ASSET_CLASS_LABELS.DEPOSIT}</strong>
-          <Badge>{formatPercent(depositPct)}</Badge>
+      {showDeposit && (
+        <div className="record-card">
+          <div className="row-between">
+            <strong>{ASSET_CLASS_LABELS.DEPOSIT}</strong>
+            <Badge>{formatPercent(depositPct)}</Badge>
+          </div>
         </div>
-      </div>
+      )}
 
-      {selections.map((sel) => {
+      {visibleSelections.map((sel) => {
         const assetClass = sel.assetClass as AssetClass;
         const percentage = profile.allocations[assetClass] ?? 0;
         const stale = sel.price ? isPriceStale(sel.price.price_date) : false;
