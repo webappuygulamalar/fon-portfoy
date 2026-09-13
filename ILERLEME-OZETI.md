@@ -115,6 +115,15 @@ etmemesine yol açıyordu. Kart artık bir toggle değil, ayrı bir adıma
 sayfada yüzde alanları ilk ekranda (hiç kaydırmadan) görünüyor (commit
 `c25aa2f`).
 
+**%0 kategoriler gizlendi, sıfır alanına odak/yazma düzeltildi (bkz. Bölüm
+27):** Özel dağılımda tam %0 verilen bir kategori (Mevduat dahil, hepsi
+aynı kurala tabi) artık Model Dağılımı'nda ve Pay Hesaplama Özeti'nde
+(masaüstü+mobil) hiç render edilmiyor — merkezi `isHiddenZeroPercentCategory`
+kuralı, hazır profillere dokunmadan. Ayrıca değeri 0 olan bir yüzde
+alanına odaklanınca "0" artık geçici olarak temizleniyor, kullanıcı
+doğrudan rakam yazabiliyor ("05" oluşmuyor) — yeni `PercentageField`
+bileşeni (commit `7f8f06c`).
+
 - **Canlı uygulama:** https://webappuygulamalar.github.io/fon-portfoy/
 - **GitHub deposu:** https://github.com/webappuygulamalar/fon-portfoy (public, `main`)
 - **Supabase projesi:** `fon-portfoy` (ref `lewccubzcsayqlkkyasb`, eu-central-1, ACTIVE_HEALTHY)
@@ -1775,9 +1784,117 @@ dönüldüğünde hem özel dağılım hem yeni rota korunuyor (Geri dön
 sütunlu yerleşim dengeli görünüyor; hiçbir adımda konsol/sayfa hatası
 yakalanmadı. Kod commit'i: `c25aa2f`.
 
-## 27. Güncel Commit Geçmişi (en yeniden en eskiye, bu özetin kapsadığı aralık)
+## 27. %0 Kategori Gizleme ve Sıfır Alanı Odak Düzeltmesi (2026-09-13)
+
+### 27.1 Sorun 1: %0 kategori Model Dağılımı'nda görünüyordu
+
+Canlı ekranda Özel dağılımda Döviz'e %0 verilse bile BKY kartı (fiyatı,
+getirisi, "Fonu değiştir" butonuyla birlikte) Model Dağılımı bölümünde
+gösteriliyordu. Kök neden: bir önceki oturumda (Bölüm 25) yalnızca
+`CalculationSummary.tsx` (Pay Hesaplama Özeti) %0 kategorileri
+filtreliyordu; `AllocationEditor.tsx` (Model Dağılımı) hiçbir zaman
+filtre uygulamıyordu — `selections.map(...)` her zaman TÜM 4 fon sınıfını
+(+Mevduat'ı koşulsuz) render ediyordu.
+
+### 27.2 Merkezi çözüm
+
+`domain/calculation/customAllocation.ts`'e TEK merkezi kural eklendi:
+
+```ts
+export function isHiddenZeroPercentCategory(isCustom: boolean, plannedPercentage: number): boolean {
+  return isCustom && plannedPercentage <= 0;
+}
+```
+
+Bu, render edilecek satırları ÖNCEDEN filtreler — CSS ile saklama
+DEĞİLDİR. İki tüketici:
+
+- **`AllocationEditor.tsx`**: `isCustom = profile.profileId ===
+  CUSTOM_PROFILE_ID` hesaplanıp hem Mevduat kartı (`showDeposit`) hem fon
+  seçimleri (`visibleSelections`) bu kurala göre filtrelendi;
+  `hasOverrides` de artık yalnızca GÖRÜNÜR seçimlerden hesaplanıyor.
+- **`CalculationSummary.tsx`**: yeni bir `isCustom: boolean` prop'u
+  (`CalculationResultPage`'den `isCustomSelected` olarak geçiriliyor)
+  eklendi; mevcut filtre bu prop'u kullanacak şekilde güncellendi. Para
+  Piyasası Katılım Fonu'nun hedef+gerçekleşen tutar bazlı özel kontrolü
+  (varsayılan politikada artık taşıyabildiği için) DEĞİŞMEDEN korundu —
+  Özel dağılımda PPF %0 iken zaten hedef de gerçekleşen de sıfırlandığı
+  için ayrı bir `isCustom` dalı gerekmiyor. Cari Hesap satırı bu filtrenin
+  tamamen dışındadır, koşulsuz render edilir.
+
+`isCustom` her zaman `false` olan hazır (yayınlanmış) profillerde
+`isHiddenZeroPercentCategory` hiçbir zaman `true` dönmez — görünümleri/
+hesaplama davranışları hiçbir koşulda değişmez (regresyon testiyle
+doğrulandı, bkz. 27.4).
+
+### 27.3 Sorun 2: sıfır değerli alana odaklanınca "0" yerinde kalıyordu
+
+Yüzde giriş alanı tam sayısal state'e (`value={allocations[ac] ?? 0}`)
+doğrudan bağlıydı; değer 0 iken kullanıcı alana dokunup rakam yazınca
+imleç "0"ın sağına ekleniyor, "05"/"010" gibi anlamsız ara değerler
+oluşuyordu. Yeni `PercentageField.tsx` bileşeni (artık
+`CustomAllocationEditor`'ün 5 satırını bu oluşturuyor), gerçek sayısal
+`value` prop'undan AYRI, yerel bir `draft: string | null` state'i
+kullanıyor:
+
+- `draft === null`: gösterim `value`den türetilir (normal durum).
+- Odaklanıldığında `value === 0` ise `draft` boş string'e çekilir —
+  kullanıcı doğrudan boş bir alana yazar.
+- Her `onChange`'te `draft` ham yazılan metne güncellenir VE üst
+  bileşenin `onChange`'i HER ZAMAN geçerli, sonlu bir sayıyla (boşsa `0`)
+  çağrılır — asla `NaN` veya boş string ile çağrılmaz. Bu sayede
+  Toplam/Kalan ve donut, düzenleme SIRASINDA da her zaman doğru kalır.
+- Blur'da (Tab/Shift+Tab/mobil "Bitti" ile aynı native olay) `draft`
+  temizlenir; alan hâlâ boşsa gösterim otomatik olarak gerçek değere
+  (zaten `0`'a çekilmiş) döner. Enter da aynı "commit ve çık" davranışı
+  için `blur()` tetikler (formsuz bir input'ta Enter'ın kendiliğinden
+  hiçbir etkisi olmadığından eklendi).
+- `+`/`-` düğmeleri taslağı temizleyip GERÇEK değer üzerinden işler;
+  `-` hiçbir zaman negatif üretmez (kırpma zaten üst bağlamda —
+  `setCustomAllocationPercentage` — yapılıyordu, DEĞİŞMEDİ).
+
+`value` prop'u input'a her zaman tanımlı bir string olarak verildiğinden
+React'in "controlled/uncontrolled input" uyarısı hiçbir zaman oluşmaz.
+Mevcut `inputMode="numeric"`, görünür `<label>`/erişilebilir ad, 0-100
+sınırı, tam sayı kuralı ve toplam %100 doğrulaması DEĞİŞMEDEN korundu.
+
+### 27.4 Testler ve canlı doğrulama
+
+Toplam **370/370** test geçiyor (`343` → `370`, net **+27**, `git diff`
+`it(`/`it.each` satırlarıyla dosya bazında doğrulandı): yeni
+`PercentageField.test.tsx` **+18** birim testi (odağa gelince sıfırın
+temizlenmesi, boşken "5"/"20" yazımı, hiçbir şey yazmadan blur'da 0'a
+dönüş, değer elle silinip blur edilince 0'a dönüş, düzenleme sırasında
+`onChange`'e asla `NaN` gitmemesi, `+`/`-` düğmelerinin boş/sıfır
+durumlarda doğru çalışması, Enter'ın blur tetiklemesi, 0/1/99/100/101
+sınırları, görünür label + `inputMode` korunumu, controlled-input uyarısı
+oluşmaması); `CalculationResultPage.test.tsx` **+9** (Döviz/Hisse/Altın/
+PPF/Mevduat için AYRI %0 görünürlük testleri, pozitif kategorilerin Model
+Dağılımı'nda kalması, Pay Hesaplama Özeti'nin MOBİL kart görünümünde de
+gizlenmesi, Cari Hesap'ın etkilenmemesi, hazır profilde regresyon
+olmaması); `CustomAllocationPage.test.tsx` net **0** (mevcut kırpma testi,
+yeni blur-sonrası davranışı yansıtacak şekilde güncellendi — negatif/
+100'den büyük bir değer artık ODAKLIYKEN yazılanı gösterip BLUR'DA
+kırpılmış değere dönüyor). Lint (0 hata, önceki 2 Fast Refresh uyarısı
+hariç), typecheck ve production build temiz.
+
+Gerçek Playwright doğrulaması (yerel dev sunucusu, headless Chromium,
+ekran görüntüleriyle): `#/hesaplama/ozel`'de değeri 0 olan bir alana
+dokununca sıfır ANINDA kayboluyor; "15" yazınca değer tam `15` (`015`
+DEĞİL); başka bir 0 alanına dokunup hiçbir şey yazmadan çıkınca tekrar
+`0` gösteriliyor; Döviz %0 bırakılıp toplam %100 tamamlanan bir
+hesaplamada sonuç sayfasında Döviz/BKY ne Model Dağılımı'nda ne Pay
+Hesaplama Özeti'nde (masaüstü tablo + mobil kart) görünüyor; tüm
+kategoriler Mevduat dışında %0 bırakılan bir uç senaryoda (Mevduat %100)
+yalnızca "Mevduat" ve "Cari Hesap" satırları kalıyor; masaüstü (1280px)
+ve 320/375/390/428px mobil genişliklerin hepsinde yatay taşma yok; hiçbir
+adımda konsol hatası, konsol uyarısı veya React input uyarısı
+yakalanmadı. Kod commit'i: `7f8f06c`.
+
+## 28. Güncel Commit Geçmişi (en yeniden en eskiye, bu özetin kapsadığı aralık)
 
 ```
+7f8f06c Özel dağılımda %0 kategorileri gizle, sıfırdan odak/yazma davranışını düzelt
 c25aa2f Özel dağılımı ayrı bir #/hesaplama/ozel adımına taşı
 8390406 docs: Bölüm 25'teki yanlış test sayısını düzelt
 5b81dbf İlerleme özetine PPF %0 kuralı ve kur yükleme durumu düzeltmesini ekle
